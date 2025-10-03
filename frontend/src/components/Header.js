@@ -4,7 +4,7 @@ import { Badge } from './ui/badge';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator } from './ui/dropdown-menu';
 import AgentStatusControl from './AgentStatusControl';
 
-const Header = ({ user, onLogout, onShowAdmin, onShowSettings }) => {
+const Header = ({ user, onLogout, onShowAdmin, onShowSettings, onShowProfile }) => {
   const getRoleBadge = (role) => {
     switch (role) {
       case 'admin':
