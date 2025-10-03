@@ -70,15 +70,6 @@ const AdminPanel = ({ user, onBack }) => {
     fetchServiceMetrics();
   }, []);
 
-  const fetchWhatsAppConfig = async () => {
-    try {
-      const response = await api.get('/admin/whatsapp-config');
-      setWhatsappConfig(response.data);
-    } catch (error) {
-      console.error('Erro ao buscar configuração:', error);
-    }
-  };
-
   const fetchUsers = async () => {
     try {
       const response = await api.get('/admin/users');
