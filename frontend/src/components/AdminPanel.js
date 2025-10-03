@@ -219,11 +219,9 @@ const AdminPanel = ({ user, onBack }) => {
         )}
 
         <Tabs defaultValue="performance" className="space-y-6">
-          <TabsList className="grid w-full grid-cols-4">
+          <TabsList className="grid w-full grid-cols-2">
             <TabsTrigger value="performance" data-testid="performance-tab">Performance</TabsTrigger>
-            <TabsTrigger value="whatsapp" data-testid="whatsapp-tab">Configuração WhatsApp</TabsTrigger>
             <TabsTrigger value="users" data-testid="users-tab">Gerenciar Usuários</TabsTrigger>
-            <TabsTrigger value="system" data-testid="system-tab">Sistema</TabsTrigger>
           </TabsList>
 
           <TabsContent value="performance">
