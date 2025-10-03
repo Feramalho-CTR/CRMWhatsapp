@@ -208,6 +208,116 @@ async def login_user(user_credentials: UserLogin):
 async def get_current_user_info(current_user: User = Depends(get_current_user)):
     return current_user
 
+# Admin routes
+async def admin_required(current_user: User = Depends(get_current_user)):
+    if current_user.role != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin access required"
+        )
+    return current_user
+
+@api_router.get("/admin/users", response_model=List[User])
+async def get_all_users(admin_user: User = Depends(admin_required)):
+    users = await db.users.find().to_list(1000)
+    return [User(**user) for user in users]
+
+@api_router.delete("/admin/users/{user_id}")
+async def delete_user(user_id: str, admin_user: User = Depends(admin_required)):
+    # Prevent admin from deleting themselves
+    if user_id == admin_user.id:
+        raise HTTPException(
+            status_code=400,
+            detail="Cannot delete your own account"
+        )
+    
+    result = await db.users.delete_one({"id": user_id})
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    return {"success": True, "message": "User deleted successfully"}
+
+@api_router.get("/admin/whatsapp-config", response_model=WhatsAppConfig)
+async def get_whatsapp_config(admin_user: User = Depends(admin_required)):
+    config = await db.whatsapp_config.find_one({})
+    if not config:
+        # Create default config
+        default_config = WhatsAppConfig()
+        await db.whatsapp_config.insert_one(default_config.dict())
+        return default_config
+    return WhatsAppConfig(**config)
+
+@api_router.put("/admin/whatsapp-config", response_model=WhatsAppConfig)
+async def update_whatsapp_config(config_update: WhatsAppConfigUpdate, admin_user: User = Depends(admin_required)):
+    # Get existing config or create new one
+    existing_config = await db.whatsapp_config.find_one({})
+    if not existing_config:
+        new_config = WhatsAppConfig()
+        config_dict = new_config.dict()
+        # Update with provided values
+        for key, value in config_update.dict(exclude_unset=True).items():
+            if value is not None:
+                config_dict[key] = value
+        config_dict["updated_at"] = datetime.now(timezone.utc)
+        await db.whatsapp_config.insert_one(config_dict)
+        return WhatsAppConfig(**config_dict)
+    
+    # Update existing config
+    update_data = {}
+    for key, value in config_update.dict(exclude_unset=True).items():
+        if value is not None:
+            update_data[key] = value
+    
+    if update_data:
+        update_data["updated_at"] = datetime.now(timezone.utc)
+        await db.whatsapp_config.update_one(
+            {"id": existing_config["id"]},
+            {"$set": update_data}
+        )
+    
+    updated_config = await db.whatsapp_config.find_one({"id": existing_config["id"]})
+    return WhatsAppConfig(**updated_config)
+
+@api_router.post("/admin/test-whatsapp")
+async def test_whatsapp_connection(admin_user: User = Depends(admin_required)):
+    """Test WhatsApp API connection"""
+    config = await db.whatsapp_config.find_one({})
+    if not config or not config.get("access_token") or not config.get("phone_number_id"):
+        raise HTTPException(
+            status_code=400,
+            detail="WhatsApp configuration incomplete. Please configure Access Token and Phone Number ID."
+        )
+    
+    # Here you would implement actual WhatsApp API test
+    # For now, we'll return a mock success response
+    try:
+        # Mock API test - replace with actual WhatsApp API call
+        # import requests
+        # url = f"https://graph.facebook.com/v18.0/{config['phone_number_id']}"
+        # headers = {"Authorization": f"Bearer {config['access_token']}"}
+        # response = requests.get(url, headers=headers)
+        # return {"success": response.status_code == 200}
+        
+        return {"success": True, "message": "Connection test successful (mock)"}
+    except Exception as e:
+        return {"success": False, "message": f"Connection test failed: {str(e)}"}
+
+@api_router.put("/admin/whatsapp-config")
+async def save_whatsapp_config(config: WhatsAppConfigUpdate, admin_user: User = Depends(admin_required)):
+    # Convert to dict and filter out None values
+    config_dict = {k: v for k, v in config.dict().items() if v is not None}
+    config_dict["updated_at"] = datetime.now(timezone.utc)
+    
+    # Update or insert config
+    existing = await db.whatsapp_config.find_one({})
+    if existing:
+        await db.whatsapp_config.update_one({}, {"$set": config_dict})
+    else:
+        config_dict["id"] = str(uuid.uuid4())
+        await db.whatsapp_config.insert_one(config_dict)
+    
+    return {"success": True, "message": "Configuration saved successfully"}
+
 # Client routes
 @api_router.get("/clients", response_model=List[Client])
 async def get_clients(current_user: User = Depends(get_current_user)):
