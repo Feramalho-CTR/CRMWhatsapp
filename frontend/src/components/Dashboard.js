@@ -91,6 +91,15 @@ const Dashboard = ({ user, onLogout }) => {
     );
   }
 
+  if (showSettings) {
+    return (
+      <Settings 
+        user={user} 
+        onBack={() => setShowSettings(false)} 
+      />
+    );
+  }
+
   return (
     <div className="h-screen flex flex-col bg-gray-50" data-testid="dashboard-container">
       <Header user={user} onLogout={onLogout} onShowAdmin={() => setShowAdminPanel(true)} />
