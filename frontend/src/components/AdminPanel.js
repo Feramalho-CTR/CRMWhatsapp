@@ -65,7 +65,6 @@ const AdminPanel = ({ user, onBack }) => {
   };
 
   useEffect(() => {
-    fetchWhatsAppConfig();
     fetchUsers();
     fetchAgentPerformance();
     fetchServiceMetrics();
