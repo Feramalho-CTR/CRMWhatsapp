@@ -26,6 +26,9 @@ const AdminPanel = ({ user, onBack }) => {
     role: 'agent'
   });
   
+  const [agentPerformance, setAgentPerformance] = useState([]);
+  const [serviceMetrics, setServiceMetrics] = useState([]);
+  
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState({ type: '', content: '' });
 
