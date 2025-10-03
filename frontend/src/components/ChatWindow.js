@@ -162,6 +162,28 @@ const ChatWindow = ({ conversation, currentUser, onSendMessage, onStatusUpdate }
         </div>
 
         <div className="flex items-center space-x-2">
+          {conversation.client.status === 'waiting' && (
+            <Button 
+              onClick={handleAcceptService} 
+              className="bg-green-500 hover:bg-green-600 text-white" 
+              size="sm"
+              data-testid="accept-service-btn"
+            >
+              ✅ Aceitar Atendimento
+            </Button>
+          )}
+          
+          {conversation.client.assigned_agent === currentUser.id && conversation.client.status === 'human' && (
+            <Button 
+              onClick={handleFinishService} 
+              variant="outline" 
+              size="sm"
+              data-testid="finish-service-btn"
+            >
+              🏁 Finalizar Atendimento
+            </Button>
+          )}
+
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="outline" size="sm" data-testid="status-change-button">
