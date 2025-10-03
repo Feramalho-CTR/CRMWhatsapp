@@ -35,11 +35,11 @@ const Header = ({ user, onLogout, onShowAdmin }) => {
           </div>
 
           <div className="flex items-center space-x-4">
+            {user.role === 'agent' && (
+              <AgentStatusControl user={user} />
+            )}
+            
             <div className="hidden md:flex items-center space-x-3 text-sm text-gray-600">
-              <div className="flex items-center space-x-2">
-                <div className="w-2 h-2 bg-green-500 rounded-full"></div>
-                <span>Online</span>
-              </div>
               <div className="w-px h-4 bg-gray-300"></div>
               <span>{new Date().toLocaleDateString('pt-BR')}</span>
             </div>
