@@ -3,7 +3,7 @@ import { Button } from './ui/button';
 import { Badge } from './ui/badge';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator } from './ui/dropdown-menu';
 
-const Header = ({ user, onLogout }) => {
+const Header = ({ user, onLogout, onShowAdmin }) => {
   const getRoleBadge = (role) => {
     switch (role) {
       case 'admin':
