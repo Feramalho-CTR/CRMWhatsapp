@@ -45,6 +45,22 @@ class User(BaseModel):
     role: str  # "admin" ou "agent"
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
+class WhatsAppConfig(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    access_token: str = ""
+    phone_number_id: str = ""
+    business_account_id: str = ""
+    webhook_verify_token: str = ""
+    webhook_url: str = ""
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+class WhatsAppConfigUpdate(BaseModel):
+    access_token: Optional[str] = None
+    phone_number_id: Optional[str] = None
+    business_account_id: Optional[str] = None
+    webhook_verify_token: Optional[str] = None
+    webhook_url: Optional[str] = None
+
 class UserCreate(BaseModel):
     username: str
     email: str
