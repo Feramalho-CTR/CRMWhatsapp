@@ -680,32 +680,46 @@ async def shutdown_db_client():
 @app.on_event("startup")
 async def create_default_admin():
     try:
-        # Delete existing users to recreate with new hash
-        await db.users.delete_many({})
+        # Check if users exist and update them to have status field
+        existing_users = await db.users.find({}).to_list(1000)
+        for user in existing_users:
+            if "status" not in user:
+                await db.users.update_one(
+                    {"id": user["id"]},
+                    {"$set": {"status": "offline", "last_activity": datetime.now(timezone.utc)}}
+                )
         
-        # Create admin user
-        admin_user = User(
-            username="admin",
-            email="admin@crm.com",
-            role="admin"
-        )
+        # Check if admin exists
+        admin_exists = await db.users.find_one({"username": "admin"})
+        if not admin_exists:
+            # Create admin user
+            admin_user = User(
+                username="admin",
+                email="admin@crm.com",
+                role="admin",
+                status="offline"
+            )
+            
+            admin_dict = admin_user.dict()
+            admin_dict["password"] = get_password_hash("admin123")
+            await db.users.insert_one(admin_dict)
+            logger.info("Default admin user created: username=admin, password=admin123")
         
-        admin_dict = admin_user.dict()
-        admin_dict["password"] = get_password_hash("admin123")
-        await db.users.insert_one(admin_dict)
-        logger.info("Default admin user created: username=admin, password=admin123")
-        
-        # Create sample agent
-        agent_user = User(
-            username="agent1",
-            email="agent1@crm.com",
-            role="agent"
-        )
-        
-        agent_dict = agent_user.dict()
-        agent_dict["password"] = get_password_hash("agent123")
-        await db.users.insert_one(agent_dict)
-        logger.info("Sample agent user created: username=agent1, password=agent123")
+        # Check if agent exists
+        agent_exists = await db.users.find_one({"username": "agent1"})
+        if not agent_exists:
+            # Create sample agent
+            agent_user = User(
+                username="agent1",
+                email="agent1@crm.com",
+                role="agent",
+                status="offline"
+            )
+            
+            agent_dict = agent_user.dict()
+            agent_dict["password"] = get_password_hash("agent123")
+            await db.users.insert_one(agent_dict)
+            logger.info("Sample agent user created: username=agent1, password=agent123")
             
     except Exception as e:
         logger.error(f"Error creating default users: {e}")
