@@ -536,6 +536,92 @@ async def accept_service(client_id: str, current_user: User = Depends(get_curren
     
     return {"success": True, "message": "Service accepted successfully"}
 
+# Profile routes
+@api_router.put("/profile/update", response_model=User)
+async def update_profile(profile_data: UserUpdate, current_user: User = Depends(get_current_user)):
+    """Update current user profile"""
+    update_data = {k: v for k, v in profile_data.dict().items() if v is not None}
+    
+    # Check if username is unique (if being updated)
+    if "username" in update_data:
+        existing_user = await db.users.find_one({
+            "username": update_data["username"],
+            "id": {"$ne": current_user.id}
+        })
+        if existing_user:
+            raise HTTPException(status_code=400, detail="Username already exists")
+    
+    # Check if email is unique (if being updated)
+    if "email" in update_data:
+        existing_user = await db.users.find_one({
+            "email": update_data["email"],
+            "id": {"$ne": current_user.id}
+        })
+        if existing_user:
+            raise HTTPException(status_code=400, detail="Email already exists")
+    
+    if update_data:
+        await db.users.update_one(
+            {"id": current_user.id},
+            {"$set": update_data}
+        )
+    
+    updated_user = await db.users.find_one({"id": current_user.id})
+    return User(**updated_user)
+
+@api_router.put("/profile/change-password")
+async def change_password(password_data: PasswordChange, current_user: User = Depends(get_current_user)):
+    """Change user password"""
+    user = await db.users.find_one({"id": current_user.id})
+    if not verify_password(password_data.current_password, user["password"]):
+        raise HTTPException(status_code=400, detail="Current password is incorrect")
+    
+    new_hashed_password = get_password_hash(password_data.new_password)
+    await db.users.update_one(
+        {"id": current_user.id},
+        {"$set": {"password": new_hashed_password}}
+    )
+    
+    return {"success": True, "message": "Password changed successfully"}
+
+@api_router.put("/admin/users/{user_id}", response_model=User)
+async def update_user(user_id: str, user_data: UserUpdate, admin_user: User = Depends(admin_required)):
+    """Update user by admin"""
+    # Prevent admin from updating themselves through this endpoint
+    if user_id == admin_user.id:
+        raise HTTPException(status_code=400, detail="Use profile update endpoint for your own data")
+    
+    update_data = {k: v for k, v in user_data.dict().items() if v is not None}
+    
+    # Check if username is unique (if being updated)
+    if "username" in update_data:
+        existing_user = await db.users.find_one({
+            "username": update_data["username"],
+            "id": {"$ne": user_id}
+        })
+        if existing_user:
+            raise HTTPException(status_code=400, detail="Username already exists")
+    
+    # Check if email is unique (if being updated)
+    if "email" in update_data:
+        existing_user = await db.users.find_one({
+            "email": update_data["email"],
+            "id": {"$ne": user_id}
+        })
+        if existing_user:
+            raise HTTPException(status_code=400, detail="Email already exists")
+    
+    result = await db.users.update_one(
+        {"id": user_id},
+        {"$set": update_data}
+    )
+    
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    updated_user = await db.users.find_one({"id": user_id})
+    return User(**updated_user)
+
 # Client routes
 @api_router.get("/clients", response_model=List[Client])
 async def get_clients(current_user: User = Depends(get_current_user)):
