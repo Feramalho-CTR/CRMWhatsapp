@@ -97,8 +97,22 @@ const Dashboard = ({ user, onLogout }) => {
   if (showSettings) {
     return (
       <Settings 
-        user={user} 
+        user={currentUser} 
         onBack={() => setShowSettings(false)} 
+      />
+    );
+  }
+
+  if (showProfile) {
+    return (
+      <Profile 
+        user={currentUser} 
+        onBack={() => setShowProfile(false)}
+        onUserUpdate={(updatedUser) => {
+          setCurrentUser(updatedUser);
+          // Update user data in localStorage
+          localStorage.setItem('user', JSON.stringify(updatedUser));
+        }}
       />
     );
   }
