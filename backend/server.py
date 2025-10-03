@@ -789,13 +789,20 @@ async def shutdown_db_client():
 @app.on_event("startup")
 async def create_default_admin():
     try:
-        # Check if users exist and update them to have status field
+        # Check if users exist and update them to have status and full_name fields
         existing_users = await db.users.find({}).to_list(1000)
         for user in existing_users:
+            update_fields = {}
             if "status" not in user:
+                update_fields["status"] = "offline"
+                update_fields["last_activity"] = datetime.now(timezone.utc)
+            if "full_name" not in user:
+                update_fields["full_name"] = user.get("username", "")
+            
+            if update_fields:
                 await db.users.update_one(
                     {"id": user["id"]},
-                    {"$set": {"status": "offline", "last_activity": datetime.now(timezone.utc)}}
+                    {"$set": update_fields}
                 )
         
         # Check if admin exists
