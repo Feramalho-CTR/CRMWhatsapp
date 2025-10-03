@@ -5,6 +5,7 @@ import ChatWindow from './ChatWindow';
 import Header from './Header';
 import AdminPanel from './AdminPanel';
 import Settings from './Settings';
+import Profile from './Profile';
 import { api } from '../App';
 
 const Dashboard = ({ user, onLogout }) => {
