@@ -141,7 +141,7 @@ const Dashboard = ({ user, onLogout }) => {
           {selectedConversation ? (
             <ChatWindow
               conversation={selectedConversation}
-              currentUser={user}
+              currentUser={currentUser}
               onSendMessage={handleSendMessage}
               onStatusUpdate={handleClientStatusUpdate}
             />
