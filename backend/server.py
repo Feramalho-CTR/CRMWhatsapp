@@ -812,6 +812,7 @@ async def create_default_admin():
             admin_user = User(
                 username="admin",
                 email="admin@crm.com",
+                full_name="Administrador",
                 role="admin",
                 status="offline"
             )
