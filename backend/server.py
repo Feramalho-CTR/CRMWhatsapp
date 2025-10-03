@@ -682,12 +682,23 @@ async def get_conversations(current_user: User = Depends(get_current_user)):
     conversations = []
     
     for client_data in clients:
+        # Get agent info if assigned
+        agent_name = None
+        if client_data.get("assigned_agent"):
+            agent = await db.users.find_one({"id": client_data["assigned_agent"]})
+            if agent:
+                agent_name = agent.get("full_name") or agent.get("username")
+        
         client = Client(**client_data)
+        # Add agent_name to client data
+        client_dict = client.dict()
+        client_dict["agent_name"] = agent_name
+        
         messages = await db.messages.find({"client_id": client.id}).sort("timestamp", -1).limit(1).to_list(1)
         messages_list = [Message(**msg) for msg in messages]
         
         conversation = Conversation(
-            client=client,
+            client=Client(**client_dict),
             messages=messages_list,
             unread_count=0  # TODO: implement unread logic
         )
