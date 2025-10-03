@@ -292,96 +292,6 @@ const AdminPanel = ({ user, onBack }) => {
             </div>
           </TabsContent>
 
-          <TabsContent value="whatsapp">
-            <Card className="p-6">
-              <div className="flex items-center justify-between mb-6">
-                <div>
-                  <h2 className="text-xl font-semibold">Configuração da API WhatsApp</h2>
-                  <p className="text-gray-600">Configure as credenciais da WhatsApp Business API</p>
-                </div>
-                <Button onClick={testWhatsAppConnection} disabled={loading} data-testid="test-whatsapp-btn">
-                  🧪 Testar Conexão
-                </Button>
-              </div>
-
-              <form onSubmit={handleWhatsAppSave} className="space-y-6">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <div className="space-y-2">
-                    <Label htmlFor="access_token">Access Token *</Label>
-                    <Input
-                      id="access_token"
-                      type="password"
-                      value={whatsappConfig.access_token}
-                      onChange={(e) => setWhatsappConfig({...whatsappConfig, access_token: e.target.value})}
-                      placeholder="Digite o Access Token"
-                      data-testid="whatsapp-access-token"
-                    />
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="phone_number_id">Phone Number ID *</Label>
-                    <Input
-                      id="phone_number_id"
-                      value={whatsappConfig.phone_number_id}
-                      onChange={(e) => setWhatsappConfig({...whatsappConfig, phone_number_id: e.target.value})}
-                      placeholder="Digite o Phone Number ID"
-                      data-testid="whatsapp-phone-id"
-                    />
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="business_account_id">Business Account ID</Label>
-                    <Input
-                      id="business_account_id"
-                      value={whatsappConfig.business_account_id}
-                      onChange={(e) => setWhatsappConfig({...whatsappConfig, business_account_id: e.target.value})}
-                      placeholder="Digite o Business Account ID"
-                      data-testid="whatsapp-business-id"
-                    />
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="webhook_verify_token">Webhook Verify Token</Label>
-                    <Input
-                      id="webhook_verify_token"
-                      value={whatsappConfig.webhook_verify_token}
-                      onChange={(e) => setWhatsappConfig({...whatsappConfig, webhook_verify_token: e.target.value})}
-                      placeholder="Digite o Webhook Verify Token"
-                      data-testid="whatsapp-webhook-token"
-                    />
-                  </div>
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="webhook_url">Webhook URL</Label>
-                  <Input
-                    id="webhook_url"
-                    value={whatsappConfig.webhook_url}
-                    onChange={(e) => setWhatsappConfig({...whatsappConfig, webhook_url: e.target.value})}
-                    placeholder="https://sua-app.com/api/whatsapp/webhook"
-                    data-testid="whatsapp-webhook-url"
-                  />
-                </div>
-
-                <div className="pt-4 border-t">
-                  <Button type="submit" disabled={loading} className="bg-green-500 hover:bg-green-600" data-testid="save-whatsapp-config">
-                    {loading ? 'Salvando...' : 'Salvar Configuração'}
-                  </Button>
-                </div>
-              </form>
-
-              <div className="mt-8 p-4 bg-blue-50 rounded-lg">
-                <h3 className="font-semibold text-blue-900 mb-2">📋 Como obter as credenciais:</h3>
-                <ol className="text-sm text-blue-800 space-y-1 ml-4 list-decimal">
-                  <li>Acesse <a href="https://developers.facebook.com/" target="_blank" rel="noopener noreferrer" className="underline">Facebook for Developers</a></li>
-                  <li>Crie um App Business e configure WhatsApp Business API</li>
-                  <li>Obtenha o Access Token temporário ou permanente</li>
-                  <li>Configure o Webhook URL apontando para: <code className="bg-white px-2 py-1 rounded">{window.location.origin}/api/whatsapp/webhook</code></li>
-                </ol>
-              </div>
-            </Card>
-          </TabsContent>
-
           <TabsContent value="users">
             <div className="space-y-6">
               <Card className="p-6">
@@ -478,41 +388,6 @@ const AdminPanel = ({ user, onBack }) => {
                 </div>
               </Card>
             </div>
-          </TabsContent>
-
-          <TabsContent value="system">
-            <Card className="p-6">
-              <h2 className="text-xl font-semibold mb-4">Informações do Sistema</h2>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div className="space-y-4">
-                  <div>
-                    <Label className="text-sm font-medium text-gray-600">Versão</Label>
-                    <p className="text-lg font-semibold">CRM WhatsApp v1.0.0</p>
-                  </div>
-                  <div>
-                    <Label className="text-sm font-medium text-gray-600">Banco de Dados</Label>
-                    <p className="text-lg font-semibold">MongoDB</p>
-                  </div>
-                  <div>
-                    <Label className="text-sm font-medium text-gray-600">Total de Usuários</Label>
-                    <p className="text-lg font-semibold">{users.length}</p>
-                  </div>
-                </div>
-                <div className="space-y-4">
-                  <div>
-                    <Label className="text-sm font-medium text-gray-600">Status da API</Label>
-                    <div className="flex items-center space-x-2">
-                      <div className="w-3 h-3 bg-green-500 rounded-full"></div>
-                      <span className="text-lg font-semibold">Online</span>
-                    </div>
-                  </div>
-                  <div>
-                    <Label className="text-sm font-medium text-gray-600">Última Atualização</Label>
-                    <p className="text-lg font-semibold">{new Date().toLocaleDateString('pt-BR')}</p>
-                  </div>
-                </div>
-              </div>
-            </Card>
           </TabsContent>
         </Tabs>
       </div>
