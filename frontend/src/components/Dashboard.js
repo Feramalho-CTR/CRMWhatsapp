@@ -12,6 +12,7 @@ const Dashboard = ({ user, onLogout }) => {
   const [selectedConversation, setSelectedConversation] = useState(null);
   const [loading, setLoading] = useState(true);
   const [showAdminPanel, setShowAdminPanel] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
 
   const fetchConversations = async () => {
     try {
