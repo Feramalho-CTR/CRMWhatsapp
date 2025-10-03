@@ -149,9 +149,16 @@ const ConversationList = ({ conversations, selectedConversation, onConversationS
                           {lastMessage.content}
                         </p>
                         <div className="flex items-center justify-between">
-                          <span className="text-xs text-gray-400">
-                            {formatTime(lastMessage.timestamp)}
-                          </span>
+                          <div className="flex flex-col">
+                            <span className="text-xs text-gray-400">
+                              {formatTime(lastMessage.timestamp)}
+                            </span>
+                            {conversation.client.agent_name && conversation.client.status === 'human' && (
+                              <span className="text-xs text-blue-600 font-medium">
+                                👤 {conversation.client.agent_name}
+                              </span>
+                            )}
+                          </div>
                           {conversation.unread_count > 0 && (
                             <span className="bg-green-500 text-white text-xs rounded-full px-2 py-1 min-w-[20px] text-center">
                               {conversation.unread_count}
