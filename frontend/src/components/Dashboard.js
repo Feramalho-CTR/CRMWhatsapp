@@ -80,9 +80,18 @@ const Dashboard = ({ user, onLogout }) => {
     }
   };
 
+  if (showAdminPanel) {
+    return (
+      <AdminPanel 
+        user={user} 
+        onBack={() => setShowAdminPanel(false)} 
+      />
+    );
+  }
+
   return (
     <div className="h-screen flex flex-col bg-gray-50" data-testid="dashboard-container">
-      <Header user={user} onLogout={onLogout} />
+      <Header user={user} onLogout={onLogout} onShowAdmin={() => setShowAdminPanel(true)} />
       
       <div className="flex-1 flex overflow-hidden">
         <div className="w-80 bg-white border-r border-gray-200 flex flex-col">
