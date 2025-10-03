@@ -25,6 +25,8 @@ const ConversationList = ({ conversations, selectedConversation, onConversationS
         return 'HUMANO';
       case 'waiting':
         return 'AGUARDANDO';
+      case 'finished':
+        return 'FINALIZADO';
       default:
         return status.toUpperCase();
     }
