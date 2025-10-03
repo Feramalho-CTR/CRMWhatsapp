@@ -24,7 +24,8 @@ const LoginPage = ({ onLogin }) => {
       onLogin(access_token, user);
     } catch (error) {
       console.error('Login error:', error);
-      setError(error.response?.data?.detail || 'Erro ao fazer login. Verifique suas credenciais.');
+      const errorMessage = error.response?.data?.detail || 'Erro ao fazer login. Verifique suas credenciais.';
+      setError(errorMessage);
     } finally {
       setLoading(false);
     }
