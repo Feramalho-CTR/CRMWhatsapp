@@ -829,6 +829,7 @@ async def create_default_admin():
             agent_user = User(
                 username="agent1",
                 email="agent1@crm.com",
+                full_name="Agente Um",
                 role="agent",
                 status="offline"
             )
