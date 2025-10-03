@@ -63,6 +63,29 @@ class WhatsAppConfigUpdate(BaseModel):
     webhook_verify_token: Optional[str] = None
     webhook_url: Optional[str] = None
 
+class AgentStatus(BaseModel):
+    agent_id: str
+    status: str  # "online", "busy", "paused", "offline"
+
+class AgentPerformance(BaseModel):
+    agent_id: str
+    agent_name: str
+    total_conversations: int
+    avg_response_time_minutes: float
+    conversations_finished_today: int
+    status: str
+    last_activity: datetime
+
+class ServiceMetrics(BaseModel):
+    conversation_id: str
+    client_phone: str
+    client_name: Optional[str]
+    agent_id: str
+    agent_name: str
+    service_duration_minutes: Optional[float]
+    started_at: datetime
+    finished_at: Optional[datetime]
+
 class UserCreate(BaseModel):
     username: str
     email: str
