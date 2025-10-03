@@ -97,22 +97,6 @@ const AdminPanel = ({ user, onBack }) => {
     }
   };
 
-  const handleWhatsAppSave = async (e) => {
-    e.preventDefault();
-    setLoading(true);
-    
-    try {
-      await api.put('/admin/whatsapp-config', whatsappConfig);
-      setMessage({ type: 'success', content: 'Configuração do WhatsApp salva com sucesso!' });
-      setTimeout(() => setMessage({ type: '', content: '' }), 3000);
-    } catch (error) {
-      setMessage({ type: 'error', content: 'Erro ao salvar configuração.' });
-      console.error('Erro:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
-
   const handleCreateUser = async (e) => {
     e.preventDefault();
     setLoading(true);
