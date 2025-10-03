@@ -91,7 +91,17 @@ class UserCreate(BaseModel):
     username: str
     email: str
     password: str
+    full_name: Optional[str] = None
     role: str = "agent"
+
+class UserUpdate(BaseModel):
+    username: Optional[str] = None
+    email: Optional[str] = None
+    full_name: Optional[str] = None
+
+class PasswordChange(BaseModel):
+    current_password: str
+    new_password: str
 
 class UserLogin(BaseModel):
     username: str
