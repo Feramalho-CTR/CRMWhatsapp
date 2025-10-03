@@ -43,6 +43,8 @@ class User(BaseModel):
     username: str
     email: str
     role: str  # "admin" ou "agent"
+    status: str = "offline"  # "online", "busy", "paused", "offline"
+    last_activity: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 class WhatsAppConfig(BaseModel):
