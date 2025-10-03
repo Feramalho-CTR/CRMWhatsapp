@@ -9,15 +9,6 @@ import { Badge } from './ui/badge';
 import { api } from '../App';
 
 const AdminPanel = ({ user, onBack }) => {
-  const [whatsappConfig, setWhatsappConfig] = useState({
-    api_key: '',
-    phone_number_id: '',
-    business_account_id: '',
-    webhook_verify_token: '',
-    webhook_url: '',
-    access_token: ''
-  });
-  
   const [users, setUsers] = useState([]);
   const [newUser, setNewUser] = useState({
     username: '',
