@@ -89,6 +89,32 @@ const ChatWindow = ({ conversation, currentUser, onSendMessage, onStatusUpdate }
     }
   };
 
+  const handleAcceptService = async () => {
+    try {
+      await api.put(`/clients/${conversation.client.id}/accept-service`);
+      // Refresh the conversation data
+      window.location.reload(); // Simple refresh for now
+    } catch (error) {
+      console.error('Erro ao aceitar atendimento:', error);
+      // TODO: Show error toast
+    }
+  };
+
+  const handleFinishService = async () => {
+    if (!window.confirm('Tem certeza que deseja finalizar este atendimento?')) {
+      return;
+    }
+    
+    try {
+      await api.put(`/clients/${conversation.client.id}/finish-service`);
+      // Refresh the conversation data
+      window.location.reload(); // Simple refresh for now
+    } catch (error) {
+      console.error('Erro ao finalizar atendimento:', error);
+      // TODO: Show error toast
+    }
+  };
+
   const formatTime = (timestamp) => {
     return new Date(timestamp).toLocaleTimeString('pt-BR', {
       hour: '2-digit',
