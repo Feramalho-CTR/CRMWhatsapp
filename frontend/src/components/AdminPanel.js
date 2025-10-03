@@ -185,6 +185,127 @@ const AdminPanel = ({ user, onBack }) => {
             <TabsTrigger value="system" data-testid="system-tab">Sistema</TabsTrigger>
           </TabsList>
 
+          <TabsContent value="performance">
+            <div className="space-y-6">
+              {/* Agent Performance Cards */}
+              <Card className="p-6">
+                <div className="flex items-center justify-between mb-6">
+                  <div>
+                    <h2 className="text-xl font-semibold">Performance dos Atendentes</h2>
+                    <p className="text-gray-600">Métricas de desempenho e status dos agentes</p>
+                  </div>
+                  <Button onClick={fetchAgentPerformance} variant="outline" data-testid="refresh-performance">
+                    🔄 Atualizar
+                  </Button>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {agentPerformance.map((agent) => (
+                    <Card key={agent.agent_id} className="p-4">
+                      <div className="flex items-center justify-between mb-3">
+                        <div className="flex items-center space-x-3">
+                          <div className="w-8 h-8 bg-blue-500 rounded-full flex items-center justify-center text-white font-medium text-sm">
+                            {agent.agent_name.charAt(0).toUpperCase()}
+                          </div>
+                          <span className="font-medium">{agent.agent_name}</span>
+                        </div>
+                        <Badge className={getStatusColor(agent.status)}>
+                          {getStatusText(agent.status)}
+                        </Badge>
+                      </div>
+                      
+                      <div className="space-y-2 text-sm">
+                        <div className="flex justify-between">
+                          <span className="text-gray-600">Total conversas:</span>
+                          <span className="font-medium">{agent.total_conversations}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-gray-600">Finalizadas hoje:</span>
+                          <span className="font-medium">{agent.conversations_finished_today}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-gray-600">Tempo médio:</span>
+                          <span className="font-medium">{agent.avg_response_time_minutes}min</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-gray-600">Última atividade:</span>
+                          <span className="text-xs text-gray-500">
+                            {new Date(agent.last_activity).toLocaleString('pt-BR')}
+                          </span>
+                        </div>
+                      </div>
+                    </Card>
+                  ))}
+                </div>
+              </Card>
+
+              {/* Service Metrics Table */}
+              <Card className="p-6">
+                <div className="flex items-center justify-between mb-6">
+                  <div>
+                    <h2 className="text-xl font-semibold">Histórico de Atendimentos</h2>
+                    <p className="text-gray-600">Últimos 30 dias - Atendimentos finalizados</p>
+                  </div>
+                  <Button onClick={fetchServiceMetrics} variant="outline" data-testid="refresh-metrics">
+                    🔄 Atualizar
+                  </Button>
+                </div>
+
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b">
+                        <th className="text-left p-2">Cliente</th>
+                        <th className="text-left p-2">Atendente</th>
+                        <th className="text-left p-2">Duração</th>
+                        <th className="text-left p-2">Iniciado</th>
+                        <th className="text-left p-2">Finalizado</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {serviceMetrics.slice(0, 10).map((metric) => (
+                        <tr key={metric.conversation_id} className="border-b hover:bg-gray-50">
+                          <td className="p-2">
+                            <div>
+                              <div className="font-medium">{metric.client_name || 'Cliente anônimo'}</div>
+                              <div className="text-xs text-gray-600">{metric.client_phone}</div>
+                            </div>
+                          </td>
+                          <td className="p-2 font-medium">{metric.agent_name}</td>
+                          <td className="p-2">
+                            {metric.service_duration_minutes ? (
+                              <span className={`px-2 py-1 rounded text-xs ${
+                                metric.service_duration_minutes < 10 
+                                  ? 'bg-green-100 text-green-800' 
+                                  : metric.service_duration_minutes < 30 
+                                    ? 'bg-yellow-100 text-yellow-800' 
+                                    : 'bg-red-100 text-red-800'
+                              }`}>
+                                {metric.service_duration_minutes.toFixed(1)}min
+                              </span>
+                            ) : '-'}
+                          </td>
+                          <td className="p-2 text-xs text-gray-600">
+                            {new Date(metric.started_at).toLocaleString('pt-BR')}
+                          </td>
+                          <td className="p-2 text-xs text-gray-600">
+                            {metric.finished_at ? new Date(metric.finished_at).toLocaleString('pt-BR') : '-'}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  
+                  {serviceMetrics.length === 0 && (
+                    <div className="text-center py-8 text-gray-500">
+                      Nenhum atendimento finalizado encontrado
+                    </div>
+                  )}
+                </div>
+              </Card>
+            </div>
+          </TabsContent>
+
           <TabsContent value="whatsapp">
             <Card className="p-6">
               <div className="flex items-center justify-between mb-6">
