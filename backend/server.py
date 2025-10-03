@@ -42,6 +42,7 @@ class User(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     username: str
     email: str
+    full_name: Optional[str] = None
     role: str  # "admin" ou "agent"
     status: str = "offline"  # "online", "busy", "paused", "offline"
     last_activity: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
