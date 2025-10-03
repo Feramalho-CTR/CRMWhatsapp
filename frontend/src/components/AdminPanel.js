@@ -57,6 +57,24 @@ const AdminPanel = ({ user, onBack }) => {
     }
   };
 
+  const fetchAgentPerformance = async () => {
+    try {
+      const response = await api.get('/admin/agents-performance');
+      setAgentPerformance(response.data);
+    } catch (error) {
+      console.error('Erro ao buscar performance:', error);
+    }
+  };
+
+  const fetchServiceMetrics = async () => {
+    try {
+      const response = await api.get('/admin/service-metrics');
+      setServiceMetrics(response.data);
+    } catch (error) {
+      console.error('Erro ao buscar métricas:', error);
+    }
+  };
+
   const handleWhatsAppSave = async (e) => {
     e.preventDefault();
     setLoading(true);
