@@ -2,6 +2,7 @@ import React from 'react';
 import { Button } from './ui/button';
 import { Badge } from './ui/badge';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator } from './ui/dropdown-menu';
+import AgentStatusControl from './AgentStatusControl';
 
 const Header = ({ user, onLogout, onShowAdmin }) => {
   const getRoleBadge = (role) => {
