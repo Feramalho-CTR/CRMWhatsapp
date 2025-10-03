@@ -129,24 +129,6 @@ const AdminPanel = ({ user, onBack }) => {
     }
   };
 
-  const testWhatsAppConnection = async () => {
-    setLoading(true);
-    try {
-      const response = await api.post('/admin/test-whatsapp');
-      if (response.data.success) {
-        setMessage({ type: 'success', content: 'Conexão com WhatsApp testada com sucesso!' });
-      } else {
-        setMessage({ type: 'error', content: 'Falha ao testar conexão com WhatsApp.' });
-      }
-    } catch (error) {
-      setMessage({ type: 'error', content: 'Erro ao testar conexão.' });
-      console.error('Erro:', error);
-    } finally {
-      setLoading(false);
-      setTimeout(() => setMessage({ type: '', content: '' }), 3000);
-    }
-  };
-
   if (user.role !== 'admin') {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
