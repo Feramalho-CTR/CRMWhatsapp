@@ -118,6 +118,7 @@ class Client(BaseModel):
     name: Optional[str] = None
     status: str = "bot"  # "bot", "human", "waiting", "finished"
     assigned_agent: Optional[str] = None
+    agent_name: Optional[str] = None  # Nome do agente para exibição
     service_started_at: Optional[datetime] = None
     service_finished_at: Optional[datetime] = None
     last_interaction: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
