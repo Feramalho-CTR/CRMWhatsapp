@@ -120,10 +120,11 @@ const Dashboard = ({ user, onLogout }) => {
   return (
     <div className="h-screen flex flex-col bg-gray-50" data-testid="dashboard-container">
       <Header 
-        user={user} 
+        user={currentUser} 
         onLogout={onLogout} 
         onShowAdmin={() => setShowAdminPanel(true)}
         onShowSettings={() => setShowSettings(true)}
+        onShowProfile={() => setShowProfile(true)}
       />
       
       <div className="flex-1 flex overflow-hidden">
