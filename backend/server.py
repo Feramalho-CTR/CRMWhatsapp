@@ -345,6 +345,186 @@ async def save_whatsapp_config(config: WhatsAppConfigUpdate, admin_user: User = 
     
     return {"success": True, "message": "Configuration saved successfully"}
 
+@api_router.get("/admin/agents-performance", response_model=List[AgentPerformance])
+async def get_agents_performance(admin_user: User = Depends(admin_required)):
+    """Get performance metrics for all agents"""
+    agents = await db.users.find({"role": "agent"}).to_list(1000)
+    performance_list = []
+    
+    for agent in agents:
+        agent_id = agent["id"]
+        
+        # Count total conversations handled by this agent
+        total_conversations = await db.clients.count_documents({"assigned_agent": agent_id})
+        
+        # Count conversations finished today
+        today_start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+        conversations_today = await db.clients.count_documents({
+            "assigned_agent": agent_id,
+            "status": "finished",
+            "service_finished_at": {"$gte": today_start}
+        })
+        
+        # Calculate average response time
+        finished_conversations = await db.clients.find({
+            "assigned_agent": agent_id,
+            "service_started_at": {"$exists": True},
+            "service_finished_at": {"$exists": True}
+        }).to_list(1000)
+        
+        total_duration = 0
+        count = 0
+        for conv in finished_conversations:
+            if conv.get("service_started_at") and conv.get("service_finished_at"):
+                start = conv["service_started_at"]
+                end = conv["service_finished_at"]
+                duration = (end - start).total_seconds() / 60  # minutes
+                total_duration += duration
+                count += 1
+        
+        avg_response_time = total_duration / count if count > 0 else 0
+        
+        performance = AgentPerformance(
+            agent_id=agent_id,
+            agent_name=agent["username"],
+            total_conversations=total_conversations,
+            avg_response_time_minutes=round(avg_response_time, 2),
+            conversations_finished_today=conversations_today,
+            status=agent.get("status", "offline"),
+            last_activity=agent.get("last_activity", agent["created_at"])
+        )
+        performance_list.append(performance)
+    
+    return performance_list
+
+@api_router.get("/admin/service-metrics", response_model=List[ServiceMetrics])
+async def get_service_metrics(admin_user: User = Depends(admin_required)):
+    """Get detailed service metrics"""
+    # Get finished conversations from last 30 days
+    thirty_days_ago = datetime.now(timezone.utc) - timedelta(days=30)
+    
+    finished_conversations = await db.clients.find({
+        "status": "finished",
+        "service_finished_at": {"$gte": thirty_days_ago},
+        "assigned_agent": {"$exists": True}
+    }).to_list(1000)
+    
+    metrics_list = []
+    for conv in finished_conversations:
+        # Get agent name
+        agent = await db.users.find_one({"id": conv["assigned_agent"]})
+        agent_name = agent["username"] if agent else "Unknown"
+        
+        # Calculate duration
+        duration = None
+        if conv.get("service_started_at") and conv.get("service_finished_at"):
+            start = conv["service_started_at"]
+            end = conv["service_finished_at"]
+            duration = (end - start).total_seconds() / 60  # minutes
+        
+        metric = ServiceMetrics(
+            conversation_id=conv["id"],
+            client_phone=conv["phone_number"],
+            client_name=conv.get("name"),
+            agent_id=conv["assigned_agent"],
+            agent_name=agent_name,
+            service_duration_minutes=round(duration, 2) if duration else None,
+            started_at=conv["service_started_at"],
+            finished_at=conv["service_finished_at"]
+        )
+        metrics_list.append(metric)
+    
+    return sorted(metrics_list, key=lambda x: x.finished_at, reverse=True)
+
+# Agent status routes
+@api_router.put("/agent/status")
+async def update_agent_status(status_data: AgentStatus, current_user: User = Depends(get_current_user)):
+    """Update agent status (online, busy, paused, offline)"""
+    if current_user.id != status_data.agent_id and current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="Can only update your own status")
+    
+    update_data = {
+        "status": status_data.status,
+        "last_activity": datetime.now(timezone.utc)
+    }
+    
+    await db.users.update_one(
+        {"id": status_data.agent_id},
+        {"$set": update_data}
+    )
+    
+    return {"success": True, "status": status_data.status}
+
+@api_router.get("/agent/my-status")
+async def get_my_status(current_user: User = Depends(get_current_user)):
+    """Get current user status"""
+    user = await db.users.find_one({"id": current_user.id})
+    return {"status": user.get("status", "offline")}
+
+@api_router.put("/clients/{client_id}/finish-service")
+async def finish_service(client_id: str, current_user: User = Depends(get_current_user)):
+    """Mark service as finished"""
+    client = await db.clients.find_one({"id": client_id})
+    if not client:
+        raise HTTPException(status_code=404, detail="Client not found")
+    
+    # Check if user is assigned to this client or is admin
+    if client.get("assigned_agent") != current_user.id and current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="Not authorized to finish this service")
+    
+    update_data = {
+        "status": "finished",
+        "service_finished_at": datetime.now(timezone.utc)
+    }
+    
+    # Set service_started_at if not set (fallback)
+    if not client.get("service_started_at"):
+        update_data["service_started_at"] = client["created_at"]
+    
+    await db.clients.update_one(
+        {"id": client_id},
+        {"$set": update_data}
+    )
+    
+    # Update agent status to online (available for new conversations)
+    await db.users.update_one(
+        {"id": current_user.id},
+        {"$set": {"status": "online", "last_activity": datetime.now(timezone.utc)}}
+    )
+    
+    return {"success": True, "message": "Service finished successfully"}
+
+@api_router.put("/clients/{client_id}/accept-service")
+async def accept_service(client_id: str, current_user: User = Depends(get_current_user)):
+    """Accept service for a client"""
+    client = await db.clients.find_one({"id": client_id})
+    if not client:
+        raise HTTPException(status_code=404, detail="Client not found")
+    
+    # Check if agent is available
+    user = await db.users.find_one({"id": current_user.id})
+    if user.get("status") not in ["online"]:
+        raise HTTPException(status_code=400, detail="Agent must be online to accept service")
+    
+    update_data = {
+        "status": "human",
+        "assigned_agent": current_user.id,
+        "service_started_at": datetime.now(timezone.utc)
+    }
+    
+    await db.clients.update_one(
+        {"id": client_id},
+        {"$set": update_data}
+    )
+    
+    # Update agent status to busy
+    await db.users.update_one(
+        {"id": current_user.id},
+        {"$set": {"status": "busy", "last_activity": datetime.now(timezone.utc)}}
+    )
+    
+    return {"success": True, "message": "Service accepted successfully"}
+
 # Client routes
 @api_router.get("/clients", response_model=List[Client])
 async def get_clients(current_user: User = Depends(get_current_user)):
