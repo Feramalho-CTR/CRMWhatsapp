@@ -82,8 +82,10 @@ class Client(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     phone_number: str
     name: Optional[str] = None
-    status: str = "bot"  # "bot", "human", "waiting"
+    status: str = "bot"  # "bot", "human", "waiting", "finished"
     assigned_agent: Optional[str] = None
+    service_started_at: Optional[datetime] = None
+    service_finished_at: Optional[datetime] = None
     last_interaction: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
