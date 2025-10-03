@@ -32,6 +32,47 @@ const AdminPanel = ({ user, onBack }) => {
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState({ type: '', content: '' });
 
+  const getRoleBadge = (role) => {
+    switch (role) {
+      case 'admin':
+        return <Badge className="bg-purple-100 text-purple-800">Admin</Badge>;
+      case 'agent':
+        return <Badge className="bg-blue-100 text-blue-800">Agente</Badge>;
+      default:
+        return <Badge className="bg-gray-100 text-gray-800">{role}</Badge>;
+    }
+  };
+
+  const getStatusColor = (status) => {
+    switch (status) {
+      case 'online':
+        return 'bg-green-100 text-green-800';
+      case 'busy':
+        return 'bg-blue-100 text-blue-800';
+      case 'paused':
+        return 'bg-yellow-100 text-yellow-800';
+      case 'offline':
+        return 'bg-gray-100 text-gray-800';
+      default:
+        return 'bg-gray-100 text-gray-800';
+    }
+  };
+
+  const getStatusText = (status) => {
+    switch (status) {
+      case 'online':
+        return 'Online';
+      case 'busy':
+        return 'Em atendimento';
+      case 'paused':
+        return 'Em pausa';
+      case 'offline':
+        return 'Offline';
+      default:
+        return status;
+    }
+  };
+
   useEffect(() => {
     fetchWhatsAppConfig();
     fetchUsers();
