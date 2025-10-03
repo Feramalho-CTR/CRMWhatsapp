@@ -3,6 +3,7 @@ import { Routes, Route } from 'react-router-dom';
 import ConversationList from './ConversationList';
 import ChatWindow from './ChatWindow';
 import Header from './Header';
+import AdminPanel from './AdminPanel';
 import { api } from '../App';
 
 const Dashboard = ({ user, onLogout }) => {
