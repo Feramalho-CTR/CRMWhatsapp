@@ -31,7 +31,10 @@ api.interceptors.response.use(
     if (error.response?.status === 401) {
       localStorage.removeItem('token');
       localStorage.removeItem('user');
-      window.location.href = '/login';
+      // Evita loops infinitos de redirecionamento se já estiver no login
+      if (window.location.pathname !== '/login') {
+        window.location.href = '/login';
+      }
     }
     return Promise.reject(error);
   }
@@ -46,18 +49,22 @@ function App() {
   useEffect(() => {
     const checkAuth = async () => {
       const token = localStorage.getItem('token');
-      const userData = localStorage.getItem('user');
       
-      if (token && userData) {
+      if (token) {
         try {
-          // Verifica se o token ainda é válido
+          // Sempre busca os dados mais recentes do servidor ao carregar a página
           const response = await api.get('/auth/me');
-          setUser(JSON.parse(userData));
+          const userData = response.data;
+          setUser(userData);
+          localStorage.setItem('user', JSON.stringify(userData));
         } catch (error) {
           console.error('Token validation failed:', error);
           localStorage.removeItem('token');
           localStorage.removeItem('user');
+          setUser(null);
         }
+      } else {
+        setUser(null);
       }
       setLoading(false);
     };
