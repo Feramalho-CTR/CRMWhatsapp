@@ -62,8 +62,19 @@ const Dashboard = ({ user, onLogout }) => {
 
     const connectWs = (attempt = 0) => {
       if (stopped) return;
-      const apiBase = api.defaults.baseURL || (process.env.REACT_APP_BACKEND_URL || '') + '/api';
-      const backendBase = apiBase.replace(/\/api\/?$/, '');
+      
+      // Reconstrói a URL do WebSocket de forma robusta
+      let backendBase = (api.defaults.baseURL || '').replace(/\/api\/?$/, '');
+      
+      // Se não houver baseURL definida (ex: URL relativa), usa a origem do navegador
+      if (!backendBase || backendBase.startsWith('/')) {
+        backendBase = window.location.origin;
+      }
+      
+      // Garante que não temos "undefined" na string
+      backendBase = backendBase.replace('undefined', '').trim();
+      if (!backendBase) backendBase = window.location.origin;
+
       const wsProtocol = backendBase.startsWith('https') ? 'wss' : 'ws';
       const token = localStorage.getItem('token');
       const wsUrl = backendBase.replace(/^https?/, wsProtocol) + `/ws?token=${encodeURIComponent(token || '')}`;
