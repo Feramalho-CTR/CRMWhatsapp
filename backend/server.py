@@ -846,7 +846,7 @@ async def accept_service(client_id: str, current_user: User = Depends(get_curren
             detail='Este atendimento já está sendo realizado por outro atendente. Apenas administradores podem assumir atendimentos em andamento.'
         )
 
-    user = await db.users.find_one({"id": current_user.id})
+    is_admin = current_user.role == 'admin'
 
     # Tentar realizar a atribuição de forma atômica usando transação do Firestore
     if _firestore_client is not None:
@@ -860,7 +860,8 @@ async def accept_service(client_id: str, current_user: User = Depends(get_curren
                 if not snap.exists:
                     return {'ok': False, 'reason': 'not_found'}
                 current_assigned = snap.get('assigned_agent')
-                if current_assigned:
+                # Admins podem sobrescrever — agentes normais não
+                if current_assigned and not is_admin:
                     return {'ok': False, 'reason': 'already_assigned', 'current_agent': current_assigned}
                 update_data = {
                     'status': 'human',
@@ -877,7 +878,6 @@ async def accept_service(client_id: str, current_user: User = Depends(get_curren
             if result.get('reason') == 'not_found':
                 raise HTTPException(status_code=404, detail='Cliente não encontrado')
             else:
-                # outro agente já assumiu
                 current_ag = result.get('current_agent', 'unknown')
                 raise HTTPException(status_code=409, detail=f'Atendimento já atribuído ao agente {current_ag}')
         else:
@@ -894,9 +894,9 @@ async def accept_service(client_id: str, current_user: User = Depends(get_curren
             except Exception:
                 pass
     else:
-        # fallback sem transação: verifica novamente e atualiza
+        # fallback sem transação
         latest = await db.clients.find_one({"id": client_id})
-        if latest.get('assigned_agent'):
+        if latest.get('assigned_agent') and not is_admin:
             raise HTTPException(status_code=409, detail='Atendimento já atribuído a outro agente')
         update_data = {
             "status": "human",
