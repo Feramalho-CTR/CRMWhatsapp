@@ -1,6 +1,5 @@
 import os
 import asyncio
-import tempfile
 import json
 import logging
 import uuid
@@ -61,6 +60,24 @@ def normalize_phone(phone: Optional[str]):
         return None
     digits = re.sub(r"\D", "", phone)
     return digits if digits else None
+
+
+def clean_firestore_dict(data: dict):
+    """Deeply convert Firestore custom types (like Timestamps) to standard Python types."""
+    if not data:
+        return data
+    new_data = dict(data)
+    for key, value in new_data.items():
+        # Handle Firestore Timestamps and other datetime-like objects
+        if hasattr(value, 'to_datetime'):
+            new_data[key] = value.to_datetime()
+        # Recursively handle nested dicts
+        elif isinstance(value, dict):
+            new_data[key] = clean_firestore_dict(value)
+        # Handle lists of dicts
+        elif isinstance(value, list):
+            new_data[key] = [clean_firestore_dict(i) if isinstance(i, dict) else i for i in value]
+    return new_data
 
 
 class _CollectionWrapper:
@@ -192,7 +209,7 @@ class _CollectionWrapper:
         return _Cursor(wrapper, filter)
 
 
-# Cria o objeto db com colecoes usadas no projeto
+# Cria o objeto db com as coleções usadas no projeto
 db = None
 if _firestore_client is not None:
     db = type('DB', (), {})()
@@ -200,18 +217,24 @@ if _firestore_client is not None:
     db.clients = _CollectionWrapper('clients')
     db.messages = _CollectionWrapper('messages')
     db.whatsapp_config = _CollectionWrapper('whatsapp_config')
-else:
-    db = None
 
 # Cria a aplicação principal sem prefixo
 app = FastAPI()
 
+# Configuração de CORS para permitir requisições do frontend
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Permite todas as origens em desenvolvimento
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+
 # Cria um router com o prefixo /api
 api_router = APIRouter(prefix="/api")
 
-# Segurança
-security = HTTPBearer(auto_error=False)
-# SECRET_KEY deve ser fornecido via .env (obrigatório)
+# Segurança e autenticação
 SECRET_KEY = os.environ.get('SECRET_KEY')
 if not SECRET_KEY:
     raise RuntimeError('SECRET_KEY não definido. Configure SECRET_KEY no arquivo .env')
@@ -240,9 +263,6 @@ def get_password_hash(password):
 
 
 # --- MODELOS DE DADOS (SCHEMAS) ---
-class UserRole(BaseModel):
-    name: str  # "admin" ou "agent"
-
 class User(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     username: str
@@ -329,7 +349,9 @@ class Token(BaseModel):
 class Client(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     phone_number: str
+    phone_normalized: Optional[str] = None
     name: Optional[str] = None
+    display_name: Optional[str] = None
     status: str = "bot"  # "bot", "human", "waiting", "finished"
     assigned_agent: Optional[str] = None
     agent_name: Optional[str] = None  # Nome do agente para exibição
@@ -337,6 +359,7 @@ class Client(BaseModel):
     service_finished_at: Optional[datetime] = None
     last_interaction: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    label: Optional[str] = None
 
 class ClientCreate(BaseModel):
     phone_number: str
@@ -383,11 +406,21 @@ async def _get_messages_subcollection(client_id: str):
     def _read():
         col = _firestore_client.collection('clients').document(client_id).collection('messages')
         try:
-            # Tenta ordenar por data, se falhar (ex: campo faltando), pega na ordem natural
+            # Tenta ordenar por data
             docs = list(col.order_by('timestamp').stream())
         except Exception:
+            # Fallback se falhar ordenação (ex: campo faltando em algum doc)
             docs = list(col.stream())
-        return [d.to_dict() for d in docs]
+        
+        results = []
+        for d in docs:
+            msg_data = d.to_dict()
+            if msg_data:
+                # Garante que o ID do documento seja o ID da mensagem se não existir no corpo
+                if 'id' not in msg_data:
+                    msg_data['id'] = d.id
+                results.append(clean_firestore_dict(msg_data))
+        return results
     return await asyncio.to_thread(_read)
 
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
@@ -545,7 +578,7 @@ async def delete_user(user_id: str, admin_user: User = Depends(admin_required)):
         )
     
     result = await db.users.delete_one({"id": user_id})
-    if result.deleted_count == 0:
+    if result.get('deleted_count') == 0:
         raise HTTPException(status_code=404, detail="Usuário não encontrado")
     
     return {"success": True, "message": "Usuário excluído com sucesso"}
@@ -554,7 +587,7 @@ async def delete_user(user_id: str, admin_user: User = Depends(admin_required)):
 async def get_whatsapp_config(admin_user: User = Depends(admin_required)):
     config = await db.whatsapp_config.find_one({})
     if not config:
-    # Cria configuração padrão
+        # Cria configuração padrão se nenhuma existir
         default_config = WhatsAppConfig()
         await db.whatsapp_config.insert_one(default_config.dict())
         return default_config
@@ -593,27 +626,15 @@ async def update_whatsapp_config(config_update: WhatsAppConfigUpdate, admin_user
 
 @api_router.post("/admin/test-whatsapp")
 async def test_whatsapp_connection(admin_user: User = Depends(admin_required)):
-    """Test WhatsApp API connection"""
+    """Testa a conexão com a API do WhatsApp. Atualmente retorna mock — implementar chamada real quando token estiver pronto."""
     config = await db.whatsapp_config.find_one({})
     if not config or not config.get("access_token") or not config.get("phone_number_id"):
         raise HTTPException(
             status_code=400,
             detail="Configuração do WhatsApp incompleta. Configure Access Token e Phone Number ID."
         )
-    
-    # Aqui você implementaria o teste real da API do WhatsApp
-    # Por enquanto, retornamos uma resposta de sucesso mock
-    try:
-    # Teste mock da API - substituir por chamada real à API do WhatsApp
-        # import requests
-        # url = f"https://graph.facebook.com/v18.0/{config['phone_number_id']}"
-        # headers = {"Authorization": f"Bearer {config['access_token']}"}
-        # response = requests.get(url, headers=headers)
-        # return {"success": response.status_code == 200}
-
-        return {"success": True, "message": "Teste de conexão bem-sucedido (mock)"}
-    except Exception as e:
-        return {"success": False, "message": f"Falha no teste de conexão: {str(e)}"}
+    # TODO: substituir por chamada real à API do WhatsApp
+    return {"success": True, "message": "Teste de conexão bem-sucedido (mock)"}
 
 
 @api_router.post('/admin/whatsapp-obtain-app-token')
@@ -626,8 +647,8 @@ async def obtain_whatsapp_app_token(admin_user: User = Depends(admin_required)):
     client_id = config.get('client_id')
     client_secret = config.get('client_secret')
 
-    # Faz requisição ao Graph API para obter token (app access token)
-    token_url = f'https://graph.facebook.com/oauth/access_token'
+    # Faz requisição ao Graph API para obter token de aplicativo
+    token_url = 'https://graph.facebook.com/oauth/access_token'
     params = {
         'client_id': client_id,
         'client_secret': client_secret,
@@ -956,7 +977,7 @@ async def update_user(user_id: str, user_data: UserUpdate, admin_user: User = De
         {"$set": update_data}
     )
     
-    if result.matched_count == 0:
+    if result.get('matched_count') == 0:
         raise HTTPException(status_code=404, detail="Usuário não encontrado")
     
     updated_user = await db.users.find_one({"id": user_id})
@@ -1041,14 +1062,26 @@ async def create_client(client_data: ClientCreate, current_user: User = Depends(
 
 @api_router.put("/clients/{client_id}", response_model=Client)
 async def update_client(client_id: str, client_data: ClientUpdate, current_user: User = Depends(get_current_user)):
-    update_data = {k: v for k, v in client_data.dict().items() if v is not None}
+    update_dict = client_data.dict(exclude_unset=True)
+    update_data = {k: v for k, v in update_dict.items() if v is not None}
     
+    # Se mudar o nome, sincroniza display_name e label
+    if "name" in update_data:
+        new_name = update_data["name"]
+        update_data["display_name"] = new_name
+        
+        # Tenta pegar o telefone para montar o label
+        curr = await db.clients.find_one({"id": client_id})
+        if curr:
+            phone = curr.get("phone_number") or curr.get("phone_normalized") or client_id
+            update_data["label"] = f"{phone} — {new_name}"
+
     result = await db.clients.update_one(
         {"id": client_id},
         {"$set": update_data}
     )
     
-    if result.matched_count == 0:
+    if result.get('matched_count') == 0:
         raise HTTPException(status_code=404, detail="Client not found")
     
     updated_client = await db.clients.find_one({"id": client_id})
@@ -1057,13 +1090,29 @@ async def update_client(client_id: str, client_data: ClientUpdate, current_user:
 # Rotas de mensagens
 @api_router.get("/clients/{client_id}/messages", response_model=List[Message])
 async def get_client_messages(client_id: str, current_user: User = Depends(get_current_user)):
-    # Try to read from subcollection clients/{client_id}/messages
-    msgs = await _get_messages_subcollection(client_id)
-    if not msgs:
-        # fallback: old messages collection where client_id field references client
-        messages = await db.messages.find({"client_id": client_id}).sort("timestamp", 1).to_list(1000)
-        return [Message(**message) for message in messages]
-    return [Message(**message) for message in msgs]
+    # 1. Lê mensagens da sub-coleção (novo padrão) - já vem limpas de _get_messages_subcollection
+    msgs_sub = await _get_messages_subcollection(client_id)
+    
+    # 2. Lê mensagens da coleção top-level (padrão antigo ou fallback)
+    msgs_top_raw = await db.messages.find({"client_id": client_id}).sort("timestamp", 1).to_list(1000)
+    msgs_top = [clean_firestore_dict(m) for m in msgs_top_raw]
+    
+    # Merge e deduplicação por ID
+    merged_dict = {}
+    
+    # Adiciona top-level primeiro
+    for m in msgs_top:
+        merged_dict[m["id"]] = Message(**m)
+        
+    # Adiciona sub-coleção (sobrescrevendo se houver mesmo ID)
+    for m in msgs_sub:
+        merged_dict[m["id"]] = Message(**m)
+        
+    # Converte de volta para lista e ordena por timestamp
+    all_messages = list(merged_dict.values())
+    all_messages.sort(key=lambda x: x.timestamp)
+    
+    return all_messages
 
 @api_router.post("/messages", response_model=Message)
 async def create_message(message_data: MessageCreate, current_user: User = Depends(get_current_user)):
@@ -1139,14 +1188,18 @@ async def get_conversations(current_user: User = Depends(get_current_user)):
         client_dict["agent_name"] = agent_name
 
         # Lê a última mensagem da sub-coleção (fonte de verdade)
-        last_msgs = await _get_messages_subcollection(client.id)
-        if last_msgs:
-            # pega apenas a última
-            messages_list = [Message(**last_msgs[-1])]
-        else:
-            # fallback: tenta a coleção top-level legada
-            msgs_fallback = await db.messages.find({"client_id": client.id}).sort("timestamp", -1).limit(1).to_list(1)
-            messages_list = [Message(**msg) for msg in msgs_fallback]
+        try:
+            last_msgs = await _get_messages_subcollection(client.id)
+            if last_msgs:
+                # pega apenas a última (já limpa pelo _get_messages_subcollection)
+                messages_list = [Message(**last_msgs[-1])]
+            else:
+                # fallback: tenta a coleção top-level legada
+                msgs_fallback = await db.messages.find({"client_id": client.id}).sort("timestamp", -1).limit(1).to_list(1)
+                messages_list = [Message(**clean_firestore_dict(msg)) for msg in msgs_fallback]
+        except Exception as e:
+            logging.error(f"Erro ao carregar mensagens para cliente {client.id}: {e}")
+            messages_list = []
         
         conversation = Conversation(
             client=Client(**client_dict),
@@ -1316,25 +1369,29 @@ async def whatsapp_webhook(request: Request):
         is_sync_request = False
         if isinstance(payload, dict):
             # Se for explicitamente sync do bot ou se tiver campos típicos do nosso n8n body
-            if payload.get("is_bot_sync") or payload.get("message_type") == "document":
+            # Ampliamos a detecção para aceitar campos comuns 'to' e 'content'/'text' como sync do bot
+            has_sync_fields = ("to" in payload or "from" in payload) and ("content" in payload or "text" in payload)
+            if payload.get("is_bot_sync") or payload.get("sender_type") == "bot" or payload.get("message_type") == "document" or has_sync_fields:
                 is_sync_request = True
         
         if is_sync_request:
             phone_number = str(payload.get("to") or payload.get("from") or "")
-            content = payload.get("content", "")
+            # suporte a 'content' ou 'text' (n8n pode usar ambos)
+            content = payload.get("content") or payload.get("text") or ""
             # detecta tipo document se houver media_metadata
             m_type = payload.get("message_type") or ("text" if not payload.get("media_metadata") else "document")
             media_md = payload.get("media_metadata")
 
-            # Permite sync se tiver telefone e (conteúdo OU m_type não for texto)
-            # Se for mídia, aceitamos mesmo se media_metadata vier vazio por erro de expressão no n8n
+            # Permite sync se tiver telefone
             if not phone_number:
-                return {"success": False, "error": "Faltam parâmetro 'to' para sync do bot", "received": payload}
+                return {"success": False, "error": "Faltam parâmetro 'to' ou 'from' para sync", "received": payload}
             
+            # Se for texto, espera conteúdo. Se for mídia, aceitamos o processamento.
             if m_type == "text" and not content:
-                 return {"success": False, "error": "Mensagem de texto sem conteúdo", "received": payload}
+                 # Se vier vazio, pode ser um objeto de teste n8n sem os dados mapeados ainda
+                 logging.warning(f"Webhook recebeu mensagem de texto sem conteúdo: {payload}")
             
-            # Padroniza remetente automação
+            # Padroniza remetente automação (bot)
             messages.append((
                 {"from": phone_number, "text": {"body": content}, "type": m_type, "media": media_md}, 
                 {"is_bot": True, "message_type": m_type, "media_metadata": media_md}
@@ -1376,9 +1433,11 @@ async def whatsapp_webhook(request: Request):
 
             # Se não encontrou no formato acima, tenta formato simples
             if not messages and isinstance(payload, dict):
-                # payload mock com campos from/text
-                if payload.get("from") and payload.get("text"):
-                    messages.append(({"text": {"body": payload.get("text")}, "from": payload.get("from")}, {}))
+                # payload mock com campos from/to e text/content
+                p_from = payload.get("from") or payload.get("to")
+                p_text = payload.get("text") or payload.get("content")
+                if p_from and p_text:
+                    messages.append(({"text": {"body": p_text}, "from": p_from}, {}))
 
         # Processa cada mensagem encontrada
         created = 0

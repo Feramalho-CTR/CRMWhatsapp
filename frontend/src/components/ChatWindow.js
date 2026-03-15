@@ -11,8 +11,12 @@ const ChatWindow = ({ conversation, currentUser, onSendMessage, onStatusUpdate, 
   const [loading, setLoading] = useState(false);
   const [sendingMessage, setSendingMessage] = useState(false);
   const [accepting, setAccepting] = useState(false);
+  const [editingName, setEditingName] = useState(false);
+  const [clientName, setClientName] = useState(conversation?.client?.name || '');
+  const [savingName, setSavingName] = useState(false);
   const messagesEndRef = useRef(null);
   const messageIdsRef = useRef(new Set());
+  const nameInputRef = useRef(null);
 
   useEffect(() => {
     const fetchMessages = async () => {
@@ -34,6 +38,20 @@ const ChatWindow = ({ conversation, currentUser, onSendMessage, onStatusUpdate, 
 
     fetchMessages();
   }, [conversation?.client?.id]);
+
+  // Sincroniza o nome local quando a conversa muda
+  useEffect(() => {
+    setClientName(conversation?.client?.name || '');
+    setEditingName(false);
+  }, [conversation?.client?.id, conversation?.client?.name]);
+
+  // Foca o input de nome quando entrar em modo de edição
+  useEffect(() => {
+    if (editingName && nameInputRef.current) {
+      nameInputRef.current.focus();
+      nameInputRef.current.select();
+    }
+  }, [editingName]);
 
   // Integra mensagens externas recebidas via WebSocket
   useEffect(() => {
@@ -107,6 +125,31 @@ const ChatWindow = ({ conversation, currentUser, onSendMessage, onStatusUpdate, 
       setSendingMessage(false);
     }
   };
+
+  const handleSaveName = async () => {
+    const name = clientName.trim();
+    if (name === (conversation?.client?.name || '')) {
+      setEditingName(false);
+      return;
+    }
+    setSavingName(true);
+    try {
+      await api.put(`/clients/${conversation.client.id}`, { name });
+      // Propaga para a lista de conversas
+      if (typeof updateConversationInList === 'function') {
+        updateConversationInList(conversation.client.id, conversation.client.status, conversation.client.assigned_agent, name);
+      }
+      if (typeof showToast === 'function') showToast('Nome salvo com sucesso!', 'success');
+    } catch (err) {
+      console.error('Erro ao salvar nome:', err);
+      if (typeof showToast === 'function') showToast('Erro ao salvar nome.', 'error');
+      setClientName(conversation?.client?.name || '');
+    } finally {
+      setSavingName(false);
+      setEditingName(false);
+    }
+  };
+
 
   const handleStatusChange = async (newStatus, assignedAgent = null) => {
     try {
@@ -261,10 +304,49 @@ const ChatWindow = ({ conversation, currentUser, onSendMessage, onStatusUpdate, 
             }
           </div>
           <div>
-            <h3 className="font-semibold text-gray-900" data-testid="chat-client-name">
-              {conversation.client.name || conversation.client.phone_number}
-            </h3>
-            <p className="text-sm text-gray-600">{conversation.client.phone_number}</p>
+            {editingName ? (
+              <div className="flex items-center space-x-1">
+                <input
+                  ref={nameInputRef}
+                  type="text"
+                  value={clientName}
+                  onChange={e => setClientName(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter') handleSaveName(); if (e.key === 'Escape') { setClientName(conversation?.client?.name || ''); setEditingName(false); } }}
+                  className="text-sm font-semibold text-gray-900 border border-green-400 rounded px-2 py-0.5 w-40 focus:outline-none focus:ring-1 focus:ring-green-500"
+                  placeholder="Nome do cliente"
+                  maxLength={60}
+                />
+                <button
+                  onClick={handleSaveName}
+                  disabled={savingName}
+                  className="text-green-600 hover:text-green-800 disabled:opacity-50 text-sm font-bold px-1"
+                  title="Salvar nome"
+                >
+                  {savingName ? '...' : '✓'}
+                </button>
+                <button
+                  onClick={() => { setClientName(conversation?.client?.name || ''); setEditingName(false); }}
+                  className="text-gray-400 hover:text-gray-600 text-sm px-1"
+                  title="Cancelar"
+                >
+                  ✕
+                </button>
+              </div>
+            ) : (
+              <div className="flex items-center space-x-1 group">
+                <h3 className="font-semibold text-gray-900" data-testid="chat-client-name">
+                  {clientName || conversation.client.phone_number}
+                </h3>
+                <button
+                  onClick={() => setEditingName(true)}
+                  className="text-gray-300 hover:text-gray-500 opacity-0 group-hover:opacity-100 transition-opacity"
+                  title="Editar nome do cliente"
+                >
+                  ✏️
+                </button>
+              </div>
+            )}
+            <p className="text-xs text-gray-500">{conversation.client.phone_number}</p>
           </div>
           <Badge className={getStatusColor(conversation.client.status)}>
             {getStatusText(conversation.client.status)}

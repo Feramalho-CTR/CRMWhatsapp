@@ -28,7 +28,10 @@ const Dashboard = ({ user, onLogout }) => {
   const fetchConversations = async () => {
     try {
       const response = await api.get('/conversations');
-      setConversations(response.data);
+      const data = response.data;
+      // Trata se o backend retornar { value: [], Count: X } ou apenas []
+      const conversationList = Array.isArray(data) ? data : (data.value || []);
+      setConversations(conversationList);
     } catch (error) {
       console.error('Erro ao buscar conversas:', error);
     } finally {
@@ -76,7 +79,6 @@ const Dashboard = ({ user, onLogout }) => {
       }
 
       ws.onopen = () => {
-        console.log('WebSocket conectado', wsUrl);
         wsConnectedRef.current = true;
         stopPolling();
         fetchConversations();
@@ -134,8 +136,7 @@ const Dashboard = ({ user, onLogout }) => {
         }
       };
 
-      ws.onclose = (e) => {
-        console.log('WebSocket fechado', e.code, e.reason);
+      ws.onclose = () => {
         wsConnectedRef.current = false;
         startPolling();
         if (!stopped) scheduleReconnect(attempt + 1);
@@ -149,7 +150,6 @@ const Dashboard = ({ user, onLogout }) => {
     const scheduleReconnect = (attempt) => {
       const maxAttempt = 8;
       const t = Math.min(30000, (1000 * Math.pow(2, Math.min(attempt, maxAttempt))));
-      console.log(`Tentando reconectar em ${t}ms (attempt ${attempt})`);
       setTimeout(() => connectWs(attempt), t);
     };
 
@@ -283,10 +283,20 @@ const Dashboard = ({ user, onLogout }) => {
               onStatusUpdate={handleClientStatusUpdate}
               showToast={showToast}
               externalMessages={chatMessages}
-              updateConversationInList={(clientId, status, assignedAgent) => {
-                setConversations(prev => prev.map(c => c.client.id===clientId ? { ...c, client: { ...c.client, status, assigned_agent: assignedAgent } } : c));
+              updateConversationInList={(clientId, status, assignedAgent, name) => {
+                setConversations(prev => prev.map(c => {
+                  if (c.client.id !== clientId) return c;
+                  const updated = { ...c, client: { ...c.client, status, assigned_agent: assignedAgent } };
+                  if (name !== undefined) updated.client.name = name;
+                  return updated;
+                }));
                 if (selectedConversation && selectedConversation.client.id === clientId) {
-                  setSelectedConversation(prev => prev ? { ...prev, client: { ...prev.client, status, assigned_agent: assignedAgent } } : prev);
+                  setSelectedConversation(prev => {
+                    if (!prev) return prev;
+                    const updated = { ...prev, client: { ...prev.client, status, assigned_agent: assignedAgent } };
+                    if (name !== undefined) updated.client.name = name;
+                    return updated;
+                  });
                 }
               }}
             />
