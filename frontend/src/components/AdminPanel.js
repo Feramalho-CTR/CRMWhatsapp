@@ -108,7 +108,7 @@ const AdminPanel = ({ user, onBack }) => {
     setLoading(true);
     
     try {
-      await api.post('/auth/register', newUser);
+      await api.post('/admin/users', newUser);
       setMessage({ type: 'success', content: 'Usuário criado com sucesso!' });
       setNewUser({ username: '', email: '', password: '', role: 'agent' });
       await fetchUsers();
@@ -121,8 +121,24 @@ const AdminPanel = ({ user, onBack }) => {
     }
   };
 
+  const handleToggleUserStatus = async (userItem) => {
+    setLoading(true);
+    try {
+      const newStatus = !userItem.is_active;
+      await api.put(`/admin/users/${userItem.id}`, { is_active: newStatus });
+      setMessage({ type: 'success', content: `Usuário ${userItem.username} ${newStatus ? 'ativado' : 'desativado'} com sucesso!` });
+      await fetchUsers();
+      setTimeout(() => setMessage({ type: '', content: '' }), 3000);
+    } catch (error) {
+      setMessage({ type: 'error', content: error.response?.data?.detail || 'Erro ao alterar status do usuário.' });
+      console.error('Erro:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleDeleteUser = async (userId) => {
-    if (!window.confirm('Tem certeza que deseja excluir este usuário?')) return;
+    if (!window.confirm('Tem certeza que deseja excluir este usuário definitivamente?')) return;
     
     try {
       await api.delete(`/admin/users/${userId}`);
@@ -323,14 +339,14 @@ const AdminPanel = ({ user, onBack }) => {
                   </div>
                   <div className="flex items-end">
                     <Button onClick={async ()=>{
-                      if(!selectedClient || !selectedAgent) { showToast ? showToast('Selecione cliente e agente','error') : window.alert('Selecione cliente e agente'); return }
+                      if(!selectedClient || !selectedAgent) { window.alert('Selecione cliente e agente'); return }
                       try {
                         await api.post(`/admin/assign-client/${selectedClient}`, { agent_id: selectedAgent });
-                        showToast ? showToast('Cliente delegado com sucesso','success') : window.alert('Cliente delegado com sucesso');
+                        window.alert('Cliente delegado com sucesso');
                         setSelectedClient(''); setSelectedAgent('');
                         await fetchServiceMetrics(); await fetchUsers();
                       } catch(e) {
-                        showToast ? showToast(e.response?.data?.detail || 'Erro ao delegar cliente','error') : window.alert(e.response?.data?.detail || 'Erro ao delegar cliente');
+                        window.alert(e.response?.data?.detail || 'Erro ao delegar cliente');
                       }
                     }}>Delegar</Button>
                   </div>
@@ -346,33 +362,33 @@ const AdminPanel = ({ user, onBack }) => {
                         id="new_username"
                         value={newUser.username}
                         onChange={(e) => setNewUser({...newUser, username: e.target.value})}
-                        placeholder="Digite o nome de usuário"
+                        placeholder="Ex: João Silva"
                         required
                         data-testid="new-user-username"
                       />
                     </div>
 
                     <div className="space-y-2">
-                      <Label htmlFor="new_email">Email</Label>
+                      <Label htmlFor="new_email">Email (Login)</Label>
                       <Input
                         id="new_email"
                         type="email"
                         value={newUser.email}
                         onChange={(e) => setNewUser({...newUser, email: e.target.value})}
-                        placeholder="Digite o email"
+                        placeholder="Ex: joao@email.com"
                         required
                         data-testid="new-user-email"
                       />
                     </div>
 
                     <div className="space-y-2">
-                      <Label htmlFor="new_password">Senha</Label>
+                      <Label htmlFor="new_password">Senha Provisória</Label>
                       <Input
                         id="new_password"
                         type="password"
                         value={newUser.password}
                         onChange={(e) => setNewUser({...newUser, password: e.target.value})}
-                        placeholder="Digite a senha"
+                        placeholder="Mínimo 6 caracteres"
                         required
                         data-testid="new-user-password"
                       />
@@ -409,22 +425,39 @@ const AdminPanel = ({ user, onBack }) => {
                           {userItem.username.charAt(0).toUpperCase()}
                         </div>
                         <div>
-                          <div className="font-medium">{userItem.username}</div>
+                          <div className="font-medium flex items-center space-x-2">
+                            <span>{userItem.username}</span>
+                            {!userItem.is_active && (
+                              <Badge className="bg-red-100 text-red-800 text-[10px] px-1.5 py-0">BLOQUEADO</Badge>
+                            )}
+                          </div>
                           <div className="text-sm text-gray-600">{userItem.email}</div>
                         </div>
                         <Badge className={userItem.role === 'admin' ? 'bg-purple-100 text-purple-800' : 'bg-blue-100 text-blue-800'}>
                           {userItem.role === 'admin' ? 'Admin' : 'Agente'}
                         </Badge>
                       </div>
-                      <Button 
-                        onClick={() => handleDeleteUser(userItem.id)} 
-                        variant="destructive" 
-                        size="sm"
-                        disabled={userItem.id === user.id}
-                        data-testid={`delete-user-${userItem.username}`}
-                      >
-                        🗑️ Excluir
-                      </Button>
+                      
+                      <div className="flex items-center space-x-2">
+                        <Button
+                          onClick={() => handleToggleUserStatus(userItem)}
+                          variant={userItem.is_active ? "outline" : "default"}
+                          size="sm"
+                          className={userItem.is_active ? "text-red-600 border-red-200 hover:bg-red-50" : "bg-green-600 hover:bg-green-700"}
+                          disabled={userItem.id === user.id || loading}
+                        >
+                          {userItem.is_active ? 'Bloquear' : 'Ativar'}
+                        </Button>
+                        <Button 
+                          onClick={() => handleDeleteUser(userItem.id)} 
+                          variant="destructive" 
+                          size="sm"
+                          disabled={userItem.id === user.id || loading}
+                          data-testid={`delete-user-${userItem.username}`}
+                        >
+                          🗑️
+                        </Button>
+                      </div>
                     </div>
                   ))}
                 </div>

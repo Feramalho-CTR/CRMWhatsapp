@@ -16,7 +16,7 @@ import requests
 from dotenv import load_dotenv
 from fastapi import FastAPI, APIRouter, HTTPException, Depends, status, Request, Response, WebSocket, WebSocketDisconnect
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from firebase_admin import credentials, firestore
+from firebase_admin import credentials, firestore, auth
 from passlib.context import CryptContext
 from pydantic import BaseModel, Field
 from starlette.middleware.cors import CORSMiddleware
@@ -270,6 +270,7 @@ class User(BaseModel):
     full_name: Optional[str] = None
     role: str  # "admin" ou "agent"
     status: str = "offline"  # "online", "busy", "paused", "offline"
+    is_active: bool = True  # Para controle de acesso sem exclusão
     last_activity: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
@@ -332,6 +333,8 @@ class UserUpdate(BaseModel):
     username: Optional[str] = None
     email: Optional[str] = None
     full_name: Optional[str] = None
+    role: Optional[str] = None
+    is_active: Optional[bool] = None
 
 class PasswordChange(BaseModel):
     current_password: str
@@ -443,86 +446,71 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
         )
 
     try:
-        payload = jwt.decode(credentials.credentials, SECRET_KEY, algorithms=[ALGORITHM])
-        username: str = payload.get("sub")
-        if username is None:
+        # Valida o token ID do Firebase vindo do frontend
+        decoded_token = await asyncio.to_thread(auth.verify_id_token, credentials.credentials)
+        email = decoded_token.get("email")
+        
+        if not email:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Não foi possível validar as credenciais",
+                detail="Token do Firebase não contém email",
                 headers={"WWW-Authenticate": "Bearer"},
             )
-    except jwt.PyJWTError:
+            
+    except Exception as e:
+        logging.error(f"Erro na validação do token Firebase: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Não foi possível validar as credenciais",
+            detail="Não foi possível validar as credenciais do Firebase",
             headers={"WWW-Authenticate": "Bearer"},
         )
     
-    user = await db.users.find_one({"username": username})
+    # Busca o usuário no Firestore pelo e-mail (agora o identificador principal vindo do Firebase Auth)
+    user = await db.users.find_one({"email": email})
+    
     if user is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Não foi possível validar as credenciais",
+            detail="Usuário não encontrado no sistema. Entre em contato com o administrador.",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    return User(**user)
+        
+    user_obj = User(**user)
+    
+    # Verifica se o usuário está ativo
+    if not user_obj.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Sua conta está desativada. Entre em contato com o administrador."
+        )
+        
+    return user_obj
 
 # --- ROTAS DE AUTENTICAÇÃO ---
 @api_router.post("/auth/register", response_model=User)
-async def register_user(user_data: UserCreate):
-    # Verifica se o usuário já existe
-    existing_user = await db.users.find_one({"username": user_data.username})
-    if existing_user:
-        raise HTTPException(
-            status_code=400,
-            detail="Nome de usuário já cadastrado"
-        )
-    
-    # Faz o hash da senha e cria o usuário
-    hashed_password = get_password_hash(user_data.password)
-    user = User(
-        username=user_data.username,
-        email=user_data.email,
-        role=user_data.role
-    )
-    
-    # Armazena no banco de dados
-    user_dict = user.dict()
-    user_dict["password"] = hashed_password
-    await db.users.insert_one(user_dict)
-    
-    return user
+async def register(user_data: UserCreate, admin_user: User = Depends(admin_required)):
+    """Rota de registro protegida. Apenas admins podem registrar novos usuários."""
+    return await create_user_admin(user_data, admin_user)
 
-@api_router.post("/auth/login", response_model=Token)
-async def login_user(user_credentials: UserLogin):
-    user = await db.users.find_one({"username": user_credentials.username})
-    if not user or not verify_password(user_credentials.password, user["password"]):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Nome de usuário ou senha incorretos",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-    # Se a senha no banco for legacy SHA-256, atualize para bcrypt
-    stored_password = user.get("password")
-    # Se a senha no banco for legacy (não começa com um prefixo de esquema $),
-    # atualize para um esquema moderno (pbkdf2_sha256/bcrypt). Não re-hasheie
-    # senhas que já estão em pbkdf2 ou bcrypt.
-    if stored_password and isinstance(stored_password, str) and not stored_password.startswith(('$2', '$pbkdf2')):
-        # Re-hash para o esquema padrão do get_password_hash (fallback interno)
-        new_hash = get_password_hash(user_credentials.password)
-        await db.users.update_one({"id": user["id"]}, {"$set": {"password": new_hash}})
-    
-    access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
-    access_token = create_access_token(
-        data={"sub": user["username"]}, expires_delta=access_token_expires
+@api_router.post("/auth/login", deprecated=True)
+async def login_user():
+    """Rota desativada em favor do Firebase Auth."""
+    raise HTTPException(
+        status_code=410,
+        detail="Esta rota de login foi desativada. Use o fluxo de autenticação via Firebase no frontend."
     )
-    
-    user_obj = User(**user)
-    return Token(access_token=access_token, token_type="bearer", user=user_obj)
 
 @api_router.get("/auth/me", response_model=User)
 async def get_current_user_info(current_user: User = Depends(get_current_user)):
     return current_user
+
+@api_router.put("/profile/change-password", deprecated=True)
+async def change_password():
+    """Rota desativada em favor do Firebase Auth."""
+    raise HTTPException(
+        status_code=410,
+        detail="A alteração de senha deve ser feita via SDK do Firebase no frontend para sua segurança."
+    )
 
 # --- ROTAS ADMINISTRATIVAS ---
 async def admin_required(current_user: User = Depends(get_current_user)):
@@ -541,29 +529,36 @@ async def get_all_users(admin_user: User = Depends(admin_required)):
 
 @api_router.post("/admin/users", response_model=User)
 async def create_user_admin(user_data: UserCreate, admin_user: User = Depends(admin_required)):
-    """Cria um novo usuário (apenas para admins). Atribui permissões de acordo com o campo role."""
-    # Valida se já existe usuário com mesmo username ou email
-    existing_user = await db.users.find_one({"username": user_data.username})
+    """Cria um novo usuário (apenas para admins). Sincroniza com Firebase Auth."""
+    # Valida se já existe usuário com mesmo e-mail (usado no Firebase login)
+    existing_user = await db.users.find_one({"email": user_data.email})
     if existing_user:
-        raise HTTPException(status_code=400, detail="Nome de usuário já cadastrado")
-
-    existing_email = await db.users.find_one({"email": user_data.email})
-    if existing_email:
         raise HTTPException(status_code=400, detail="Email já cadastrado")
 
-    # Hash da senha
-    hashed_password = get_password_hash(user_data.password)
+    # 1. Cria no Firebase Auth primeiro para garantir credenciais
+    try:
+        fb_user = await asyncio.to_thread(
+            auth.create_user,
+            email=user_data.email,
+            password=user_data.password,
+            display_name=user_data.full_name
+        )
+    except Exception as e:
+        logging.error(f"Erro ao criar usuário no Firebase: {str(e)}")
+        raise HTTPException(status_code=400, detail=f"Erro no Firebase: {str(e)}")
 
+    # 2. Cria no banco de dados local (Firestore) para permissões e metadados
     new_user = User(
+        id=fb_user.uid, # Usa o UID do Firebase como ID local
         username=user_data.username,
         email=user_data.email,
         full_name=user_data.full_name,
         role=user_data.role or "agent",
-        status="offline"
+        is_active=True
     )
 
     user_dict = new_user.dict()
-    user_dict["password"] = hashed_password
+    # Não salvamos a senha localmente por segurança, o Firebase faz isso
     await db.users.insert_one(user_dict)
 
     return new_user
@@ -577,9 +572,16 @@ async def delete_user(user_id: str, admin_user: User = Depends(admin_required)):
             detail="Não é possível excluir sua própria conta"
         )
     
+    # 1. Remove do Firebase Auth
+    try:
+        await asyncio.to_thread(auth.delete_user, user_id)
+    except Exception as e:
+        logging.warning(f"Erro ao deletar do Firebase (pode não existir): {str(e)}")
+
+    # 2. Remove do banco local
     result = await db.users.delete_one({"id": user_id})
     if result.get('deleted_count') == 0:
-        raise HTTPException(status_code=404, detail="Usuário não encontrado")
+        raise HTTPException(status_code=404, detail="Usuário não encontrado localmente")
     
     return {"success": True, "message": "Usuário excluído com sucesso"}
 

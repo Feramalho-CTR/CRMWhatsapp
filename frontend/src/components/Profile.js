@@ -6,6 +6,8 @@ import { Label } from './ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
 import { Badge } from './ui/badge';
 import { api } from '../App';
+import { auth } from '../firebaseConfig';
+import { updatePassword } from 'firebase/auth';
 
 const Profile = ({ user, onBack, onUserUpdate }) => {
   const [profileData, setProfileData] = useState({
@@ -74,16 +76,27 @@ const Profile = ({ user, onBack, onUserUpdate }) => {
     setLoading(true);
     
     try {
-      await api.put('/profile/change-password', {
-        current_password: passwordData.current_password,
-        new_password: passwordData.new_password
-      });
-      setMessage({ type: 'success', content: 'Senha alterada com sucesso!' });
+      // No Firebase, alteração de senha exige re-autenticação se a sessão for antiga
+      // Por simplicidade aqui, tentamos atualizar diretamente. 
+      // Se falhar por 'auth/requires-recent-login', avisamos o usuário para relogar.
+      const userInstance = auth.currentUser;
+      if (!userInstance) throw new Error('Usuário não autenticado no Firebase');
+
+      await updatePassword(userInstance, passwordData.new_password);
+      
+      setMessage({ type: 'success', content: 'Senha alterada com sucesso via Firebase!' });
       setPasswordData({ current_password: '', new_password: '', confirm_password: '' });
       setTimeout(() => setMessage({ type: '', content: '' }), 3000);
     } catch (error) {
-      setMessage({ type: 'error', content: error.response?.data?.detail || 'Erro ao alterar senha.' });
-      setTimeout(() => setMessage({ type: '', content: '' }), 3000);
+      console.error('Erro ao alterar senha:', error);
+      let errMsg = 'Erro ao alterar senha.';
+      if (error.code === 'auth/requires-recent-login') {
+        errMsg = 'Para sua segurança, saia do sistema e entre novamente antes de trocar a senha.';
+      } else if (error.message) {
+        errMsg = error.message;
+      }
+      setMessage({ type: 'error', content: errMsg });
+      setTimeout(() => setMessage({ type: '', content: '' }), 5000);
     } finally {
       setLoading(false);
     }

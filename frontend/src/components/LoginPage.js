@@ -4,10 +4,12 @@ import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
 import { api } from '../App';
+import { auth } from '../firebaseConfig';
+import { signInWithEmailAndPassword } from 'firebase/auth';
 
 const LoginPage = ({ onLogin }) => {
   const [formData, setFormData] = useState({
-    username: '',
+    username: '', // usado como email
     password: ''
   });
   const [loading, setLoading] = useState(false);
@@ -19,12 +21,31 @@ const LoginPage = ({ onLogin }) => {
     setError('');
 
     try {
-      const response = await api.post('/auth/login', formData);
-      const { access_token, user } = response.data;
-      onLogin(access_token, user);
+      // 1. Autentica no Firebase
+      const userCredential = await signInWithEmailAndPassword(auth, formData.username, formData.password);
+      const idToken = await userCredential.user.getIdToken();
+      
+      // 2. Com o token do Firebase, buscamos os dados do perfil (role, etc) no nosso backend
+      // Precisamos enviar o token manualmente aqui porque o Interceptor do App.js 
+      // pode não ter pegado do localStorage ainda.
+      const response = await api.get('/auth/me', {
+        headers: { Authorization: `Bearer ${idToken}` }
+      });
+      
+      const user = response.data;
+      onLogin(idToken, user);
     } catch (error) {
       console.error('Login error:', error);
-      const errorMessage = error.response?.data?.detail || 'Erro ao fazer login. Verifique suas credenciais.';
+      let errorMessage = 'Erro ao fazer login. Verifique suas credenciais.';
+      
+      if (error.code === 'auth/user-not-found' || error.code === 'auth/wrong-password') {
+        errorMessage = 'Email ou senha incorretos.';
+      } else if (error.code === 'auth/invalid-email') {
+        errorMessage = 'Formato de email inválido.';
+      } else if (error.response?.data?.detail) {
+        errorMessage = error.response.data.detail;
+      }
+      
       setError(errorMessage);
     } finally {
       setLoading(false);
@@ -55,17 +76,17 @@ const LoginPage = ({ onLogin }) => {
           <form onSubmit={handleSubmit} className="space-y-6">
             <div className="space-y-2">
               <Label htmlFor="username" className="text-sm font-medium text-gray-700">
-                Usuário
+                Email
               </Label>
               <Input
                 id="username"
                 name="username"
-                type="text"
+                type="email"
                 value={formData.username}
                 onChange={handleChange}
                 required
                 className="h-11"
-                placeholder="Digite seu usuário"
+                placeholder="seu@email.com"
                 data-testid="login-username-input"
               />
             </div>
@@ -109,14 +130,6 @@ const LoginPage = ({ onLogin }) => {
               )}
             </Button>
           </form>
-
-          <div className="mt-6 pt-6 border-t border-gray-200">
-            <div className="text-sm text-gray-600">
-              <p className="mb-2"><strong>Credenciais de teste:</strong></p>
-              <p>Admin: <code className="bg-gray-100 px-2 py-1 rounded">admin / admin123</code></p>
-              <p>Agente: <code className="bg-gray-100 px-2 py-1 rounded">agent1 / agent123</code></p>
-            </div>
-          </div>
         </Card>
       </div>
     </div>
