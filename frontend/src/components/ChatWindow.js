@@ -478,8 +478,14 @@ const ChatWindow = ({ conversation, currentUser, onSendMessage, onStatusUpdate, 
         </div>
 
         <div className="flex items-center space-x-2 flex-wrap gap-1">
-          {/* Botão Aceitar Atendimento */}
-          {(conversation.client.status === 'waiting' || conversation.client.status === 'bot') && (
+          {/* Botão Aceitar Atendimento:
+               - Status 'bot' ou 'waiting': qualquer agente pode aceitar
+               - Status 'human': só admin pode aceitar (via confirmação de senha) */}
+          {(
+            conversation.client.status === 'waiting' ||
+            conversation.client.status === 'bot' ||
+            (conversation.client.status === 'human' && isAdmin)
+          ) && (
             <Button
               onClick={handleAcceptService}
               className="bg-green-500 hover:bg-green-600 text-white"
@@ -487,7 +493,7 @@ const ChatWindow = ({ conversation, currentUser, onSendMessage, onStatusUpdate, 
               disabled={accepting}
               data-testid="accept-service-btn"
             >
-              {accepting ? '⏳' : '✅'} Aceitar Atendimento
+              {accepting ? '⏳' : '✅'} {conversation.client.status === 'human' ? 'Assumir do Agente' : 'Aceitar Atendimento'}
             </Button>
           )}
 
@@ -524,10 +530,13 @@ const ChatWindow = ({ conversation, currentUser, onSendMessage, onStatusUpdate, 
                 <div className="w-3 h-3 bg-green-500 rounded-full mr-2"></div>
                 Atendimento por BOT
               </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => handleAcceptService()} data-testid="status-human-option">
-                <div className="w-3 h-3 bg-blue-500 rounded-full mr-2"></div>
-                Assumir Atendimento
-              </DropdownMenuItem>
+              {/* Opção Assumir — esconde para agentes quando já está em atendimento humano */}
+              {(conversation.client.status !== 'human' || isAdmin) && (
+                <DropdownMenuItem onClick={() => handleAcceptService()} data-testid="status-human-option">
+                  <div className="w-3 h-3 bg-blue-500 rounded-full mr-2"></div>
+                  Assumir Atendimento
+                </DropdownMenuItem>
+              )}
               <DropdownMenuItem onClick={() => handleStatusChange('waiting')} data-testid="status-waiting-option">
                 <div className="w-3 h-3 bg-red-500 rounded-full mr-2"></div>
                 Aguardando Humano

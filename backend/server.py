@@ -838,8 +838,14 @@ async def accept_service(client_id: str, current_user: User = Depends(get_curren
     if not client:
         raise HTTPException(status_code=404, detail="Cliente não encontrado")
 
-    # Não bloquear por status do agente aqui — permitimos que o agente aceite e
-    # confiamos na transação do Firestore para prevenir atribuições concorrentes.
+    # Agentes NÃO podem aceitar um atendimento que já está sendo feito por humano.
+    # Apenas admins podem fazer isso (via o endpoint de assign ou confirmação de senha).
+    if client.get('status') == 'human' and client.get('assigned_agent') and current_user.role != 'admin':
+        raise HTTPException(
+            status_code=403,
+            detail='Este atendimento já está sendo realizado por outro atendente. Apenas administradores podem assumir atendimentos em andamento.'
+        )
+
     user = await db.users.find_one({"id": current_user.id})
 
     # Tentar realizar a atribuição de forma atômica usando transação do Firestore
