@@ -490,7 +490,17 @@ async def get_current_user(request: Request, credentials: HTTPAuthorizationCrede
             detail="Sua conta está desativada. Entre em contato com o administrador."
         )
         
+        
     return user_obj
+
+# --- MIDDLEWARE / DEPENDENCIES ---
+async def admin_required(current_user: User = Depends(get_current_user)):
+    if current_user.role != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Acesso de administrador necessário"
+        )
+    return current_user
 
 # --- ROTAS DE AUTENTICAÇÃO ---
 @api_router.post("/auth/register", response_model=User)
@@ -519,14 +529,6 @@ async def change_password():
     )
 
 # --- ROTAS ADMINISTRATIVAS ---
-async def admin_required(current_user: User = Depends(get_current_user)):
-    if current_user.role != "admin":
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Acesso de administrador necessário"
-        )
-    return current_user
-
 @api_router.get("/admin/users", response_model=List[User])
 async def get_all_users(admin_user: User = Depends(admin_required)):
     users = await db.users.find().to_list(1000)
