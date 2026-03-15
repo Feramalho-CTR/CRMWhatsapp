@@ -1783,7 +1783,7 @@ async def shutdown_db_client():
     # Firestore client não precisa ser fechado explicitamente.
     try:
         if firebase_app is not None:
-            # não há necessidade de chamar delete_app na maioria dos cenários, mas deixamos como noop
+            # no-op
             pass
     except Exception:
         pass
