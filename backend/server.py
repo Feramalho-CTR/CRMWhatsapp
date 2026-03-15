@@ -15,6 +15,7 @@ import jwt
 import requests
 from dotenv import load_dotenv
 from fastapi import FastAPI, APIRouter, HTTPException, Depends, status, Request, Response, WebSocket, WebSocketDisconnect
+from fastapi.responses import JSONResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from firebase_admin import credentials, firestore, auth
 from passlib.context import CryptContext
@@ -1704,6 +1705,190 @@ async def resend_whatsapp_message(message_id: str, admin_user: User = Depends(ad
     await db.messages.update_one({"id": message_id}, {"$set": {"external_response": resp_json}})
 
     return {"success": True, "message_id": message_id, "response": resp_json}
+
+
+# ──────────────────────────────────────────────────────────────
+#  ENDPOINTS PÚBLICOS PARA INTEGRAÇÃO N8N / AUTOMAÇAO
+#  Não requerem JWT do Firebase — usam uma chave secreta simples
+#  configurada via variável de ambiente WEBHOOK_SECRET.
+#  Se WEBHOOK_SECRET não estiver definido, o endpoint fica aberto
+#  (OK para dev/staging — configure em produção!).
+# ──────────────────────────────────────────────────────────────
+
+WEBHOOK_SECRET = os.environ.get('WEBHOOK_SECRET', '').strip()
+
+def _check_webhook_secret(request: Request):
+    """Valida a chave secreta enviada pelo n8n (header ou query param)."""
+    if not WEBHOOK_SECRET:
+        return  # sem segredo configurado — aceita tudo
+    secret = (
+        request.headers.get('X-Webhook-Secret')
+        or request.query_params.get('secret')
+        or ''
+    )
+    if secret != WEBHOOK_SECRET:
+        raise HTTPException(status_code=401, detail='Webhook secret inválido')
+
+
+@app.get('/api/webhook/status')
+async def webhook_check_status(request: Request, phone: str = ''):
+    """
+    Consulta o status do atendimento de um número de telefone.
+
+    Parâmetros de query:
+      - phone  : número de telefone (qualquer formato, ex: 556781418281 ou +55 67 8141-8281)
+      - secret : chave secreta (ou envie no header X-Webhook-Secret)
+
+    Retorna:
+    {
+      "phone": "556781418281",     # número normalizado
+      "found": true,               # false se não cadastrado
+      "status": "bot",            # "bot" | "human" | "waiting" | "finished"
+      "handled_by_human": false,  # true somente quando status == "human"
+      "assigned_agent_id": null,  # ID do agente ou null
+      "assigned_agent_name": null # Nome do agente ou null
+    }
+    """
+    _check_webhook_secret(request)
+
+    if not phone:
+        raise HTTPException(status_code=400, detail='Parâmetro "phone" é obrigatório')
+
+    phone_norm = normalize_phone(phone)
+    if not phone_norm:
+        raise HTTPException(status_code=400, detail='Número de telefone inválido')
+
+    # Busca pelo ID normalizado (padrão do CRM)
+    client = await db.clients.find_one({'id': phone_norm})
+    if not client:
+        # Tenta busca pelo campo phone_number como fallback
+        client = await db.clients.find_one({'phone_number': phone_norm})
+    if not client:
+        client = await db.clients.find_one({'phone_number': phone})
+
+    if not client:
+        return {
+            'phone': phone_norm,
+            'found': False,
+            'status': 'bot',
+            'handled_by_human': False,
+            'assigned_agent_id': None,
+            'assigned_agent_name': None,
+        }
+
+    client_status = client.get('status', 'bot')
+    assigned_agent_id = client.get('assigned_agent')
+    agent_name = client.get('agent_name') or None
+
+    # Busca nome do agente se não estiver cacheado no documento
+    if assigned_agent_id and not agent_name:
+        try:
+            agent_doc = await db.users.find_one({'id': assigned_agent_id})
+            if agent_doc:
+                agent_name = agent_doc.get('full_name') or agent_doc.get('username')
+        except Exception:
+            pass
+
+    return {
+        'phone': phone_norm,
+        'found': True,
+        'status': client_status,
+        'handled_by_human': client_status == 'human' and bool(assigned_agent_id),
+        'assigned_agent_id': assigned_agent_id,
+        'assigned_agent_name': agent_name,
+    }
+
+
+@app.post('/api/webhook/bot-response')
+async def webhook_bot_response(request: Request):
+    """
+    Endpoint para o n8n registrar uma resposta do bot SOMENTE se o atendimento
+    ainda estiver sob controle do bot (status != 'human').
+
+    Body JSON esperado:
+    {
+      "phone": "556781418281",
+      "content": "Texto da resposta do bot",
+      "secret": "sua-chave-secreta"   ← opcional se já enviar no header
+    }
+
+    Retorna:
+    - 200 {"saved": true} se registrado com sucesso
+    - 409 {"saved": false, "reason": "human_in_control", "agent": "Nome do agente"} se humano já assumiu
+    """
+    _check_webhook_secret(request)
+
+    try:
+        body = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail='Corpo JSON inválido')
+
+    phone = str(body.get('phone', '')).strip()
+    content = str(body.get('content', '')).strip()
+
+    if not phone:
+        raise HTTPException(status_code=400, detail='Campo "phone" é obrigatório')
+    if not content:
+        raise HTTPException(status_code=400, detail='Campo "content" é obrigatório')
+
+    phone_norm = normalize_phone(phone)
+    if not phone_norm:
+        raise HTTPException(status_code=400, detail='Número de telefone inválido')
+
+    # Lê o estado atual do cliente
+    client = await db.clients.find_one({'id': phone_norm})
+    if not client:
+        client = await db.clients.find_one({'phone_number': phone_norm})
+
+    if client:
+        client_status = client.get('status', 'bot')
+        assigned_agent_id = client.get('assigned_agent')
+
+        # Se humano já assumiu, recusa o registro da resposta do bot
+        if client_status == 'human' and assigned_agent_id:
+            agent_name = None
+            try:
+                agent_doc = await db.users.find_one({'id': assigned_agent_id})
+                if agent_doc:
+                    agent_name = agent_doc.get('full_name') or agent_doc.get('username')
+            except Exception:
+                pass
+            return JSONResponse(
+                status_code=409,
+                content={
+                    'saved': False,
+                    'reason': 'human_in_control',
+                    'agent': agent_name,
+                    'message': f'Atendimento assumido por {agent_name or assigned_agent_id}. Resposta do bot ignorada.'
+                }
+            )
+
+    # Registra a mensagem como sendo do bot
+    client_id = phone_norm
+    message = Message(client_id=client_id, sender_type='bot', content=content)
+    if _firestore_client is not None:
+        msg_dict = message.dict()
+        await asyncio.to_thread(
+            lambda md=msg_dict, cid=client_id, mid=message.id:
+                _firestore_client.collection('clients').document(cid)
+                    .collection('messages').document(mid).set(md)
+        )
+    else:
+        await db.messages.insert_one(message.dict())
+
+    # Atualiza última interação
+    await db.clients.update_one({'id': client_id}, {'$set': {'last_interaction': message.timestamp}})
+
+    # Notifica frontend em tempo real
+    try:
+        msg_ws = message.dict()
+        msg_ws['timestamp'] = message.timestamp.isoformat()
+        await ws_manager.broadcast({'type': 'new_message', 'client_id': client_id, 'message': msg_ws})
+    except Exception:
+        pass
+
+    return {'saved': True, 'message_id': message.id}
+
 
 # Inclui o router na aplicação principal
 app.include_router(api_router)
