@@ -7,7 +7,8 @@ import '@/App.css';
 import LoginPage from './components/LoginPage';
 import Dashboard from './components/Dashboard';
 
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || '';
+const raw_url = process.env.REACT_APP_BACKEND_URL;
+const BACKEND_URL = (raw_url && raw_url !== 'undefined') ? raw_url : '';
 const API = BACKEND_URL ? `${BACKEND_URL}/api` : '/api';
 
 // Cria instância do axios com interceptors
