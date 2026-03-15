@@ -996,29 +996,40 @@ async def update_user(user_id: str, user_data: UserUpdate, admin_user: User = De
 
 @api_router.post('/admin/assign-client/{client_id}')
 async def admin_assign_client(client_id: str, assign: AssignClientRequest, admin_user: User = Depends(admin_required)):
-    """Assign a client to a specific agent if the client has no assigned agent yet."""
+    """Admin assigns (or reassigns) a client to a specific agent."""
     client = await db.clients.find_one({"id": client_id})
     if not client:
         raise HTTPException(status_code=404, detail='Cliente não encontrado')
 
-    if client.get('assigned_agent'):
-        raise HTTPException(status_code=400, detail='Cliente já possui agente atribuído')
-
-    # Verify agent exists
+    # Verify target user exists and is agent or admin
     agent = await db.users.find_one({"id": assign.agent_id})
-    if not agent or agent.get('role') != 'agent':
+    if not agent or agent.get('role') not in ('agent', 'admin'):
         raise HTTPException(status_code=404, detail='Agente não encontrado')
 
-    # Assign
+    old_agent_id = client.get('assigned_agent')
+
+    # Assign (or reassign)
+    if _firestore_client is not None:
+        def _write():
+            _firestore_client.collection('clients').document(client_id).update({
+                'assigned_agent': assign.agent_id,
+                'status': 'human'
+            })
+        await asyncio.to_thread(_write)
     await db.clients.update_one({"id": client_id}, {"$set": {"assigned_agent": assign.agent_id, "status": "human"}})
 
-    # Update agent status to busy
+    # Update new agent status to busy
     await db.users.update_one({"id": assign.agent_id}, {"$set": {"status": "busy", "last_activity": datetime.now(timezone.utc)}})
 
-    # broadcast assignment
+    # If reassigned, free old agent
+    if old_agent_id and old_agent_id != assign.agent_id:
+        still_busy = await db.clients.find_one({"assigned_agent": old_agent_id, "status": "human"})
+        if not still_busy:
+            await db.users.update_one({"id": old_agent_id}, {"$set": {"status": "online"}})
+
+    # Broadcast assignment via WebSocket
     try:
-        agent_user = await db.users.find_one({'id': assign.agent_id})
-        agent_name = agent_user.get('full_name') if agent_user else None
+        agent_name = agent.get('full_name') or agent.get('username')
         await ws_manager.broadcast({
             'type': 'client_assigned',
             'client_id': client_id,
