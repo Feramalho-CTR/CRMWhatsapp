@@ -1,3 +1,4 @@
+// Force trigger Netlify deploy to apply env variables - 2026-03-15
 import React, { useState, useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import axios from 'axios';
