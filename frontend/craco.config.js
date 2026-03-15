@@ -1,7 +1,7 @@
-// Load configuration from environment or config file
+// Carrega configuração do ambiente ou de um arquivo de config
 const path = require('path');
 
-// Environment variable overrides
+// Sobrescritas por variáveis de ambiente
 const config = {
   disableHotReload: process.env.DISABLE_HOT_RELOAD === 'true',
 };
@@ -13,20 +13,20 @@ module.exports = {
     },
     configure: (webpackConfig) => {
       
-      // Disable hot reload completely if environment variable is set
+  // Desativa hot reload completamente se a variável de ambiente estiver setada
       if (config.disableHotReload) {
-        // Remove hot reload related plugins
+  // Remove plugins relacionados ao hot reload
         webpackConfig.plugins = webpackConfig.plugins.filter(plugin => {
           return !(plugin.constructor.name === 'HotModuleReplacementPlugin');
         });
         
-        // Disable watch mode
+  // Desativa o modo watch
         webpackConfig.watch = false;
         webpackConfig.watchOptions = {
-          ignored: /.*/, // Ignore all files
+          ignored: /.*/, // Ignora todos os arquivos
         };
       } else {
-        // Add ignored patterns to reduce watched directories
+  // Adiciona padrões ignorados para reduzir diretórios monitorados
         webpackConfig.watchOptions = {
           ...webpackConfig.watchOptions,
           ignored: [

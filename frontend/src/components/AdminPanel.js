@@ -19,6 +19,9 @@ const AdminPanel = ({ user, onBack }) => {
   
   const [agentPerformance, setAgentPerformance] = useState([]);
   const [serviceMetrics, setServiceMetrics] = useState([]);
+  const [allClients, setAllClients] = useState([]);
+  const [selectedClient, setSelectedClient] = useState('');
+  const [selectedAgent, setSelectedAgent] = useState('');
   
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState({ type: '', content: '' });
@@ -92,6 +95,9 @@ const AdminPanel = ({ user, onBack }) => {
     try {
       const response = await api.get('/admin/service-metrics');
       setServiceMetrics(response.data);
+      // também busca clients para delegação
+      const clientsResp = await api.get('/clients');
+      setAllClients(clientsResp.data);
     } catch (error) {
       console.error('Erro ao buscar métricas:', error);
     }
@@ -294,6 +300,42 @@ const AdminPanel = ({ user, onBack }) => {
 
           <TabsContent value="users">
             <div className="space-y-6">
+              <Card className="p-6">
+                <h2 className="text-xl font-semibold mb-4">Delegar Cliente a Agente</h2>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div>
+                    <Label>Cliente</Label>
+                    <select className="w-full px-3 py-2 border rounded" value={selectedClient} onChange={(e)=>setSelectedClient(e.target.value)}>
+                      <option value="">-- selecione --</option>
+                      {allClients.filter(c=>!c.assigned_agent).map(c=> (
+                        <option key={c.id} value={c.id}>{c.name || c.phone_number} ({c.phone_number})</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <Label>Agente</Label>
+                    <select className="w-full px-3 py-2 border rounded" value={selectedAgent} onChange={(e)=>setSelectedAgent(e.target.value)}>
+                      <option value="">-- selecione --</option>
+                      {users.filter(u=>u.role==='agent').map(a=> (
+                        <option key={a.id} value={a.id}>{a.username} ({getStatusText(a.status)})</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="flex items-end">
+                    <Button onClick={async ()=>{
+                      if(!selectedClient || !selectedAgent) { showToast ? showToast('Selecione cliente e agente','error') : window.alert('Selecione cliente e agente'); return }
+                      try {
+                        await api.post(`/admin/assign-client/${selectedClient}`, { agent_id: selectedAgent });
+                        showToast ? showToast('Cliente delegado com sucesso','success') : window.alert('Cliente delegado com sucesso');
+                        setSelectedClient(''); setSelectedAgent('');
+                        await fetchServiceMetrics(); await fetchUsers();
+                      } catch(e) {
+                        showToast ? showToast(e.response?.data?.detail || 'Erro ao delegar cliente','error') : window.alert(e.response?.data?.detail || 'Erro ao delegar cliente');
+                      }
+                    }}>Delegar</Button>
+                  </div>
+                </div>
+              </Card>
               <Card className="p-6">
                 <h2 className="text-xl font-semibold mb-4">Criar Novo Usuário</h2>
                 <form onSubmit={handleCreateUser} className="space-y-4">

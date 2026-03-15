@@ -3,19 +3,19 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import axios from 'axios';
 import '@/App.css';
 
-// Components
+// Componentes
 import LoginPage from './components/LoginPage';
 import Dashboard from './components/Dashboard';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 const API = `${BACKEND_URL}/api`;
 
-// Create axios instance with interceptors
+// Cria instância do axios com interceptors
 const api = axios.create({
   baseURL: API,
 });
 
-// Add auth token to requests
+// Adiciona token de autenticação às requisições
 api.interceptors.request.use((config) => {
   const token = localStorage.getItem('token');
   if (token) {
@@ -24,7 +24,7 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
-// Handle auth errors
+// Trata erros de autenticação
 api.interceptors.response.use(
   (response) => response,
   (error) => {
@@ -50,7 +50,7 @@ function App() {
       
       if (token && userData) {
         try {
-          // Verify token is still valid
+          // Verifica se o token ainda é válido
           const response = await api.get('/auth/me');
           setUser(JSON.parse(userData));
         } catch (error) {

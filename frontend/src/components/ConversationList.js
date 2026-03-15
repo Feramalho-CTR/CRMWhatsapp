@@ -37,7 +37,7 @@ const ConversationList = ({ conversations, selectedConversation, onConversationS
     const now = new Date();
     const diff = now - date;
     
-    // Se for hoje, mostra apenas a hora
+  // Se for hoje, mostra apenas a hora
     if (diff < 86400000) {
       return date.toLocaleTimeString('pt-BR', { 
         hour: '2-digit', 
@@ -45,17 +45,17 @@ const ConversationList = ({ conversations, selectedConversation, onConversationS
       });
     }
     
-    // Se for ontem
+  // Se for ontem
     if (diff < 172800000) {
       return 'Ontem';
     }
     
-    // Se for esta semana
+  // Se for esta semana
     if (diff < 604800000) {
       return date.toLocaleDateString('pt-BR', { weekday: 'short' });
     }
     
-    // Data completa
+  // Data completa
     return date.toLocaleDateString('pt-BR', { 
       day: '2-digit', 
       month: '2-digit' 

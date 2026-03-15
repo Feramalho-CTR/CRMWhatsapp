@@ -52,14 +52,22 @@ const Settings = ({ user, onBack }) => {
     setLoading(true);
     try {
       const response = await api.post('/admin/test-whatsapp');
-      if (response.data.success) {
+      if (response.data && response.data.success) {
         setMessage({ type: 'success', content: 'Conexão com WhatsApp testada com sucesso!' });
       } else {
-        setMessage({ type: 'error', content: 'Falha ao testar conexão com WhatsApp.' });
+        const detail = response.data && (response.data.message || response.data.detail || JSON.stringify(response.data));
+        setMessage({ type: 'error', content: `Falha ao testar conexão com WhatsApp. ${detail ? '- ' + detail : ''}` });
+        console.error('Resposta do teste WhatsApp:', response.data);
       }
     } catch (error) {
-      setMessage({ type: 'error', content: 'Erro ao testar conexão.' });
-      console.error('Erro:', error);
+      let detail = '';
+      if (error.response && error.response.data) {
+        detail = error.response.data.detail || error.response.data.message || JSON.stringify(error.response.data);
+      } else {
+        detail = error.message;
+      }
+      setMessage({ type: 'error', content: `Erro ao testar conexão. ${detail}` });
+      console.error('Erro ao testar conexão:', error);
     } finally {
       setLoading(false);
       setTimeout(() => setMessage({ type: '', content: '' }), 3000);
@@ -115,9 +123,37 @@ const Settings = ({ user, onBack }) => {
                   <h2 className="text-xl font-semibold">Configuração da API WhatsApp Business</h2>
                   <p className="text-gray-600">Configure as credenciais da WhatsApp Business API para integração em produção</p>
                 </div>
-                <Button onClick={testWhatsAppConnection} disabled={loading} data-testid="test-whatsapp-btn">
-                  🧪 Testar Conexão
-                </Button>
+                <div className="flex items-center space-x-3">
+                  <Button onClick={testWhatsAppConnection} disabled={loading} data-testid="test-whatsapp-btn">
+                    🧪 Testar Conexão
+                  </Button>
+                  <Button onClick={async () => {
+                    setLoading(true);
+                    try {
+                      const response = await api.post('/admin/whatsapp-obtain-app-token');
+                      if (response.data && response.data.access_token) {
+                        setWhatsappConfig({...whatsappConfig, access_token: response.data.access_token});
+                        setMessage({ type: 'success', content: 'Access token obtido e atualizado com sucesso.' });
+                      } else {
+                        setMessage({ type: 'error', content: 'Não foi possível obter access token.' });
+                      }
+                    } catch (err) {
+                      let detail = '';
+                      if (err.response && err.response.data) {
+                        detail = err.response.data.detail || JSON.stringify(err.response.data);
+                      } else {
+                        detail = err.message;
+                      }
+                      setMessage({ type: 'error', content: `Erro ao obter token: ${detail}` });
+                      console.error('Erro ao obter token:', err);
+                    } finally {
+                      setLoading(false);
+                      setTimeout(() => setMessage({ type: '', content: '' }), 3000);
+                    }
+                  }} disabled={loading} data-testid="obtain-app-token-btn">
+                    🔑 Obter App Token
+                  </Button>
+                </div>
               </div>
 
               <form onSubmit={handleWhatsAppSave} className="space-y-6">
@@ -160,6 +196,31 @@ const Settings = ({ user, onBack }) => {
                   </div>
 
                   <div className="space-y-2">
+                    <Label htmlFor="client_id">Client ID (App)</Label>
+                    <Input
+                      id="client_id"
+                      value={whatsappConfig.client_id || ''}
+                      onChange={(e) => setWhatsappConfig({...whatsappConfig, client_id: e.target.value})}
+                      placeholder="Client ID do App"
+                      data-testid="whatsapp-client-id"
+                    />
+                    <p className="text-xs text-gray-500">Client ID do App para obter token via client_credentials (opcional)</p>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="client_secret">Client Secret (App)</Label>
+                    <Input
+                      id="client_secret"
+                      type="password"
+                      value={whatsappConfig.client_secret || ''}
+                      onChange={(e) => setWhatsappConfig({...whatsappConfig, client_secret: e.target.value})}
+                      placeholder="Client Secret do App"
+                      data-testid="whatsapp-client-secret"
+                    />
+                    <p className="text-xs text-gray-500">Client Secret do App (armazenado no servidor)</p>
+                  </div>
+
+                  <div className="space-y-2">
                     <Label htmlFor="webhook_verify_token">Webhook Verify Token</Label>
                     <Input
                       id="webhook_verify_token"
@@ -180,10 +241,29 @@ const Settings = ({ user, onBack }) => {
                     onChange={(e) => setWhatsappConfig({...whatsappConfig, webhook_url: e.target.value})}
                     placeholder="https://sua-app.com/api/whatsapp/webhook"
                     data-testid="whatsapp-webhook-url"
-                    className="bg-gray-50"
-                    readOnly
+                    className="bg-white"
                   />
                   <p className="text-xs text-gray-500">URL do webhook (configurada automaticamente)</p>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="use_n8n">Usar n8n para envio</Label>
+                  <div className="flex items-center space-x-2">
+                    <input id="use_n8n" type="checkbox" checked={!!whatsappConfig.use_n8n} onChange={(e) => setWhatsappConfig({...whatsappConfig, use_n8n: e.target.checked})} />
+                    <p className="text-xs text-gray-500">Ao ativar, mensagens de saída serão enviadas para a URL do n8n configurada abaixo.</p>
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="n8n_webhook_url">n8n Webhook URL</Label>
+                  <Input
+                    id="n8n_webhook_url"
+                    value={whatsappConfig.n8n_webhook_url || ''}
+                    onChange={(e) => setWhatsappConfig({...whatsappConfig, n8n_webhook_url: e.target.value})}
+                    placeholder="https://seu-n8n.example/webhook"
+                    data-testid="whatsapp-n8n-webhook"
+                  />
+                  <p className="text-xs text-gray-500">URL do webhook do n8n que receberá payloads para envio.</p>
                 </div>
 
                 <div className="pt-4 border-t">
@@ -231,7 +311,7 @@ const Settings = ({ user, onBack }) => {
                     <Label className="text-sm font-medium text-gray-600">Banco de Dados</Label>
                     <div className="flex items-center space-x-2">
                       <div className="w-3 h-3 bg-green-500 rounded-full"></div>
-                      <span className="text-lg font-semibold">MongoDB</span>
+                      <span className="text-lg font-semibold">Firebase / Firestore</span>
                     </div>
                     <p className="text-xs text-gray-500">Status: Conectado</p>
                   </div>
@@ -269,7 +349,7 @@ const Settings = ({ user, onBack }) => {
                       <div className="w-3 h-3 bg-blue-500 rounded-full"></div>
                       <span className="text-lg font-semibold">Desenvolvimento</span>
                     </div>
-                    <p className="text-xs text-gray-500">Emergent Cloud</p>
+                    <p className="text-xs text-gray-500">FR tecnoligia Cloud</p>
                   </div>
                 </div>
               </Card>

@@ -16,6 +16,14 @@ const Dashboard = ({ user, onLogout }) => {
   const [showSettings, setShowSettings] = useState(false);
   const [showProfile, setShowProfile] = useState(false);
   const [currentUser, setCurrentUser] = useState(user);
+  const [toast, setToast] = useState(null);
+  const [chatMessages, setChatMessages] = useState([]);
+  const wsConnectedRef = React.useRef(false);
+
+  const showToast = (message, type = 'info') => {
+    setToast({ message, type });
+    setTimeout(() => setToast(null), 3500);
+  };
 
   const fetchConversations = async () => {
     try {
@@ -28,32 +36,145 @@ const Dashboard = ({ user, onLogout }) => {
     }
   };
 
+  const selectedConversationRef = React.useRef(selectedConversation);
+  useEffect(() => { selectedConversationRef.current = selectedConversation; }, [selectedConversation]);
+
   useEffect(() => {
     fetchConversations();
-    
-    // Poll for updates every 5 seconds
-    const interval = setInterval(fetchConversations, 5000);
-    return () => clearInterval(interval);
+
+    let ws = null;
+    let stopped = false;
+    let pollingInterval = null;
+
+    const startPolling = () => {
+      if (pollingInterval) return;
+      pollingInterval = setInterval(() => {
+        if (!wsConnectedRef.current) fetchConversations();
+      }, 15000);
+    };
+
+    const stopPolling = () => {
+      if (pollingInterval) { clearInterval(pollingInterval); pollingInterval = null; }
+    };
+
+    const connectWs = (attempt = 0) => {
+      if (stopped) return;
+      const apiBase = api.defaults.baseURL || (process.env.REACT_APP_BACKEND_URL || '') + '/api';
+      const backendBase = apiBase.replace(/\/api\/?$/, '');
+      const wsProtocol = backendBase.startsWith('https') ? 'wss' : 'ws';
+      const token = localStorage.getItem('token');
+      const wsUrl = backendBase.replace(/^https?/, wsProtocol) + `/ws?token=${encodeURIComponent(token || '')}`;
+
+      try {
+        ws = new WebSocket(wsUrl);
+      } catch (err) {
+        console.error('Falha ao criar WebSocket', err);
+        wsConnectedRef.current = false;
+        startPolling();
+        scheduleReconnect(attempt + 1);
+        return;
+      }
+
+      ws.onopen = () => {
+        console.log('WebSocket conectado', wsUrl);
+        wsConnectedRef.current = true;
+        stopPolling();
+        fetchConversations();
+      };
+
+      ws.onmessage = (ev) => {
+        try {
+          const data = JSON.parse(ev.data);
+
+          if (data && data.type === 'client_assigned') {
+            const clientId = data.client_id;
+            const assigned = data.assigned_agent;
+            const status = data.status;
+            const agentName = data.agent_name || assigned;
+
+            setConversations(prev => prev.map(c => {
+              if (c.client.id === clientId) {
+                return { ...c, client: { ...c.client, status, assigned_agent: assigned, agent_name: agentName } };
+              }
+              return c;
+            }));
+
+            setSelectedConversation(prev => (prev && prev.client && prev.client.id === clientId)
+              ? { ...prev, client: { ...prev.client, status, assigned_agent: assigned, agent_name: agentName } }
+              : prev
+            );
+
+            showToast(`Atendimento atribuído ao agente ${agentName}`, 'success');
+          }
+
+          if (data && data.type === 'new_message') {
+            const clientId = data.client_id;
+            const newMsg = data.message;
+
+            // Atualiza lista de conversas: move conversa pro topo e atualiza preview
+            fetchConversations();
+
+            // Se a conversa aberta é a que recebeu a mensagem, atualiza mensagens
+            const currentSel = selectedConversationRef.current;
+            if (currentSel && currentSel.client && currentSel.client.id === clientId) {
+              setChatMessages(prev => {
+                // Evita duplicatas (a mensagem pode ter sido adicionada otimisticamente)
+                if (prev.some(m => m.id === newMsg.id)) return prev;
+                return [...prev, newMsg];
+              });
+            } else {
+              // Notifica agente de nova mensagem em outra conversa
+              if (newMsg && newMsg.sender_type === 'client') {
+                showToast(`📩 Nova mensagem de ${clientId}`, 'info');
+              }
+            }
+          }
+        } catch (err) {
+          console.error('Erro ao processar mensagem WS', err);
+        }
+      };
+
+      ws.onclose = (e) => {
+        console.log('WebSocket fechado', e.code, e.reason);
+        wsConnectedRef.current = false;
+        startPolling();
+        if (!stopped) scheduleReconnect(attempt + 1);
+      };
+
+      ws.onerror = (e) => {
+        console.error('WebSocket erro', e);
+      };
+    };
+
+    const scheduleReconnect = (attempt) => {
+      const maxAttempt = 8;
+      const t = Math.min(30000, (1000 * Math.pow(2, Math.min(attempt, maxAttempt))));
+      console.log(`Tentando reconectar em ${t}ms (attempt ${attempt})`);
+      setTimeout(() => connectWs(attempt), t);
+    };
+
+    startPolling();
+    connectWs(0);
+
+    return () => {
+      stopped = true;
+      wsConnectedRef.current = false;
+      stopPolling();
+      try { if (ws) ws.close(); } catch (_) {}
+    };
   }, []);
 
   const handleConversationSelect = (conversation) => {
     setSelectedConversation(conversation);
+    // Limpa mensagens do chat anterior ao trocar de conversa
+    setChatMessages([]);
   };
 
   const handleSendMessage = async (messageData) => {
     try {
-      await api.post('/whatsapp/send', messageData);
-      // Refresh conversations after sending
-      await fetchConversations();
-      
-      // Refresh selected conversation if it matches
-      if (selectedConversation && selectedConversation.client.id === messageData.client_id) {
-        const messages = await api.get(`/clients/${messageData.client_id}/messages`);
-        setSelectedConversation({
-          ...selectedConversation,
-          messages: messages.data
-        });
-      }
+      const response = await api.post('/whatsapp/send', messageData);
+      // Retorna o resultado para que o ChatWindow possa atualizar o ID imediamente
+      return response.data;
     } catch (error) {
       console.error('Erro ao enviar mensagem:', error);
       throw error;
@@ -66,19 +187,28 @@ const Dashboard = ({ user, onLogout }) => {
       if (assignedAgent) updateData.assigned_agent = assignedAgent;
       
       await api.put(`/clients/${clientId}`, updateData);
-      await fetchConversations();
-      
-      // Update selected conversation if it matches
-      if (selectedConversation && selectedConversation.client.id === clientId) {
-        setSelectedConversation({
-          ...selectedConversation,
-          client: {
-            ...selectedConversation.client,
-            status,
-            assigned_agent: assignedAgent
+      // Atualiza apenas conversa afetada no array `conversations`
+      setConversations(prev => prev.map(c => {
+        if (c.client.id === clientId) {
+          const updated = { ...c, client: { ...c.client, status, assigned_agent: assignedAgent } };
+          // também atualiza agent_name quando possível
+          if (assignedAgent) {
+            // tenta obter username do users já carregado via AdminPanel (não garantido)
+            updated.client.agent_name = updated.client.agent_name || null;
           }
-        });
+          return updated;
+        }
+        return c;
+      }));
+
+      // Atualiza a conversa selecionada se corresponder
+      if (selectedConversation && selectedConversation.client.id === clientId) {
+        setSelectedConversation(prev => ({
+          ...prev,
+          client: { ...prev.client, status, assigned_agent: assignedAgent }
+        }));
       }
+      showToast('Status do cliente atualizado', 'success');
     } catch (error) {
       console.error('Erro ao atualizar status:', error);
       throw error;
@@ -90,6 +220,7 @@ const Dashboard = ({ user, onLogout }) => {
       <AdminPanel 
         user={user} 
         onBack={() => setShowAdminPanel(false)} 
+        showToast={showToast}
       />
     );
   }
@@ -110,7 +241,7 @@ const Dashboard = ({ user, onLogout }) => {
         onBack={() => setShowProfile(false)}
         onUserUpdate={(updatedUser) => {
           setCurrentUser(updatedUser);
-          // Update user data in localStorage
+          // Atualiza dados do usuário no localStorage
           localStorage.setItem('user', JSON.stringify(updatedUser));
         }}
       />
@@ -119,6 +250,12 @@ const Dashboard = ({ user, onLogout }) => {
 
   return (
     <div className="h-screen flex flex-col bg-gray-50" data-testid="dashboard-container">
+      {/* Toast */}
+      {toast && (
+        <div className={`fixed top-6 right-6 z-50 px-4 py-2 rounded shadow-lg ${toast.type==='success'? 'bg-green-600 text-white' : 'bg-gray-800 text-white'}`}>
+          {toast.message}
+        </div>
+      )}
       <Header 
         user={currentUser} 
         onLogout={onLogout} 
@@ -144,6 +281,14 @@ const Dashboard = ({ user, onLogout }) => {
               currentUser={currentUser}
               onSendMessage={handleSendMessage}
               onStatusUpdate={handleClientStatusUpdate}
+              showToast={showToast}
+              externalMessages={chatMessages}
+              updateConversationInList={(clientId, status, assignedAgent) => {
+                setConversations(prev => prev.map(c => c.client.id===clientId ? { ...c, client: { ...c.client, status, assigned_agent: assignedAgent } } : c));
+                if (selectedConversation && selectedConversation.client.id === clientId) {
+                  setSelectedConversation(prev => prev ? { ...prev, client: { ...prev.client, status, assigned_agent: assignedAgent } } : prev);
+                }
+              }}
             />
           ) : (
             <div className="flex-1 flex items-center justify-center bg-gray-100" data-testid="no-conversation-selected">
