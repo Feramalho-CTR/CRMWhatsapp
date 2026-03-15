@@ -1789,7 +1789,12 @@ async def shutdown_db_client():
 
 # Cria usuário admin padrão na inicialização
 @app.on_event("startup")
-async def create_default_admin():
+async def startup_event():
+    logger.info("==========================================")
+    logger.info("BACKEND VERSION: 2.0 - FIREBASE AUTH ACTIVE")
+    logger.info(f"PROJECT ID: {FIREBASE_PROJECT}")
+    logger.info("==========================================")
+    
     # If Firestore is not configured, skip startup DB initialization
     if db is None:
         logger.info('Firestore client not configured; skipping default admin creation')
