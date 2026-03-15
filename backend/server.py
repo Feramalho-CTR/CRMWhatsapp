@@ -451,6 +451,7 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
         email = decoded_token.get("email")
         
         if not email:
+            logging.error("Token do Firebase validado, mas não contém email")
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Token do Firebase não contém email",
@@ -459,19 +460,22 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
             
     except Exception as e:
         logging.error(f"Erro na validação do token Firebase: {str(e)}")
+        # Incluímos o erro detalhado para ajudar no debug (pode ser removido depois)
+        detail_msg = f"Falha na validação do token: {str(e)}"
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Não foi possível validar as credenciais do Firebase",
+            detail=detail_msg,
             headers={"WWW-Authenticate": "Bearer"},
         )
     
-    # Busca o usuário no Firestore pelo e-mail (agora o identificador principal vindo do Firebase Auth)
+    # Busca o usuário no Firestore pelo e-mail
     user = await db.users.find_one({"email": email})
     
     if user is None:
+        logging.error(f"Usuário autenticado no Firebase ({email}), mas não encontrado no Firestore local")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Usuário não encontrado no sistema. Entre em contato com o administrador.",
+            detail=f"Usuário ({email}) não cadastrado no CRM. Fale com um admin.",
             headers={"WWW-Authenticate": "Bearer"},
         )
         
