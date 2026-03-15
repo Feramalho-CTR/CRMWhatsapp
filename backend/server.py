@@ -218,13 +218,13 @@ if _firestore_client is not None:
     db.messages = _CollectionWrapper('messages')
     db.whatsapp_config = _CollectionWrapper('whatsapp_config')
 
-# Cria a aplicação principal sem prefixo
+# Aplicação principal
 app = FastAPI()
 
-# Configuração de CORS para permitir requisições do frontend
+# Configuração de CORS consolidada (deve ser a primeira a ser adicionada)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Permite todas as origens em desenvolvimento
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -436,12 +436,13 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
     encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
     return encoded_jwt
 
-async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
+async def get_current_user(request: Request, credentials: HTTPAuthorizationCredentials = Depends(security)):
     # Quando auto_error=False, o objeto credentials pode ser None. Tratar isso como 401.
     if credentials is None:
+        logging.warning(f"Requisição sem header de autorização para {request.url.path}")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Não foi possível validar as credenciais",
+            detail="Header de autorização (Bearer Token) ausente ou malformado",
             headers={"WWW-Authenticate": "Bearer"},
         )
 
@@ -1737,19 +1738,22 @@ async def websocket_endpoint(websocket: WebSocket):
         await websocket.close(code=4401)
         return
 
-    # validate token similarly to get_current_user
+    # validate token using Firebase Admin
     try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        username: str = payload.get('sub')
-        if username is None:
+        decoded_token = await asyncio.to_thread(auth.verify_id_token, token)
+        email = decoded_token.get("email")
+        if not email:
             await websocket.close(code=4401)
             return
-    except Exception:
+    except Exception as e:
+        logging.error(f"Erro na validação do token WebSocket: {e}")
         await websocket.close(code=4401)
         return
 
-    user = await db.users.find_one({'username': username})
+    # Busca o usuário pelo e-mail (novo padrão Firebase)
+    user = await db.users.find_one({'email': email})
     if not user:
+        logging.error(f"Usuário WebSocket ({email}) não encontrado no banco local")
         await websocket.close(code=4401)
         return
 
@@ -1764,13 +1768,7 @@ async def websocket_endpoint(websocket: WebSocket):
     except Exception:
         ws_manager.disconnect(websocket)
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_credentials=True,
-    allow_origins=os.environ.get('CORS_ORIGINS', '*').split(','),
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# Configuração de CORS removida daqui para manter apenas no topo do arquivo
 
 # Configura logging
 logging.basicConfig(
