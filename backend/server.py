@@ -437,6 +437,7 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
     return encoded_jwt
 
 async def get_current_user(request: Request, credentials: HTTPAuthorizationCredentials = Depends(security)):
+    logging.info(f"--- Autenticando requisição para {request.url.path} [V2.1] ---")
     # Quando auto_error=False, o objeto credentials pode ser None. Tratar isso como 401.
     if credentials is None:
         logging.warning(f"Requisição sem header de autorização para {request.url.path}")
@@ -462,7 +463,7 @@ async def get_current_user(request: Request, credentials: HTTPAuthorizationCrede
     except Exception as e:
         logging.error(f"Erro na validação do token Firebase: {str(e)}")
         # Incluímos o erro detalhado para ajudar no debug (pode ser removido depois)
-        detail_msg = f"Falha na validação do token: {str(e)}"
+        detail_msg = f"Falha na validação do token: {str(e)} [V2.1]"
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail=detail_msg,
