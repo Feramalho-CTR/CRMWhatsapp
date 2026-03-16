@@ -339,9 +339,15 @@ async def add_cors_header_to_errors(request: Request, call_next):
             response.headers["Access-Control-Allow-Credentials"] = "true"
         return response
     except Exception as e:
-        logging.error(f"ERRO NÃO TRATADO NO MIDDLEWARE: {str(e)}", exc_info=True)
+        import traceback
+        error_details = traceback.format_exc()
+        logging.error(f"ERRO NÃO TRATADO NO MIDDLEWARE: {str(e)}\n{error_details}")
         from fastapi.responses import JSONResponse
-        content = {"detail": f"Erro interno do servidor: {str(e)}", "type": "unhandled_exception"}
+        content = {
+            "detail": f"Erro interno do servidor: {str(e)}", 
+            "type": "unhandled_exception",
+            "debug_info": error_details if os.environ.get('DEBUG_MODE') == 'true' else None
+        }
         response = JSONResponse(status_code=500, content=content)
         origin = request.headers.get("origin")
         if origin in ORIGINS:
@@ -390,7 +396,7 @@ class User(BaseModel):
     username: str
     email: str
     full_name: Optional[str] = None
-    role: str  # "admin" ou "agent"
+    role: str = "agent"  # "admin" ou "agent"
     status: str = "offline"  # "online", "busy", "paused", "offline"
     is_active: bool = True  # Para controle de acesso sem exclusão
     last_activity: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
@@ -609,7 +615,18 @@ async def get_current_user(request: Request, credentials: HTTPAuthorizationCrede
             headers={"WWW-Authenticate": "Bearer"},
         )
         
-    user_obj = User(**user)
+    try:
+        user_obj = User(**user)
+    except Exception as e:
+        logging.error(f"Erro ao instanciar modelo User para {email}: {e}")
+        # Tenta fallback manual se falhar a validação estrita
+        user_obj = User(
+            id=user.get("id", str(uuid.uuid4())),
+            username=user.get("username", email.split('@')[0]),
+            email=email,
+            role=user.get("role", "agent"),
+            is_active=user.get("is_active", True)
+        )
     
     # Verifica se o usuário está ativo
     if not user_obj.is_active:
