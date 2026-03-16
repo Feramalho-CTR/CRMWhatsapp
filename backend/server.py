@@ -19,7 +19,7 @@ from fastapi.responses import JSONResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from firebase_admin import credentials, firestore, auth
 from passlib.context import CryptContext
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 from starlette.middleware.cors import CORSMiddleware
 
 ROOT_DIR = Path(__file__).parent
@@ -279,14 +279,33 @@ if _firestore_client is not None:
 # Aplicação principal
 app = FastAPI()
 
-# Configuração de CORS consolidada (deve ser a primeira a ser adicionada)
+# Configuração de CORS consolidada
+ORIGINS = [
+    "https://crmcebrac.netlify.app",
+    "http://localhost:3000",
+    "http://localhost:5173",
+    "https://crm-whatsapp-backend-production.up.railway.app"
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["*"]
 )
+
+@app.middleware("http")
+async def add_cors_header_to_errors(request, call_next):
+    """Garante que erros 500 também tenham headers CORS para que o frontend veja o erro real."""
+    response = await call_next(request)
+    origin = request.headers.get("origin")
+    if origin in ORIGINS:
+        response.headers["Access-Control-Allow-Origin"] = origin
+        response.headers["Access-Control-Allow-Credentials"] = "true"
+    return response
+
 
 
 # Cria um router com o prefixo /api
@@ -322,6 +341,7 @@ def get_password_hash(password):
 
 # --- MODELOS DE DADOS (SCHEMAS) ---
 class User(BaseModel):
+    model_config = ConfigDict(extra='ignore')
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     username: str
     email: str
@@ -408,6 +428,7 @@ class Token(BaseModel):
     user: User
 
 class Client(BaseModel):
+    model_config = ConfigDict(extra='ignore')
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     phone_number: str
     phone_normalized: Optional[str] = None
@@ -436,6 +457,7 @@ class AssignClientRequest(BaseModel):
     agent_id: str
 
 class Message(BaseModel):
+    model_config = ConfigDict(extra='ignore')
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     client_id: str
     sender_type: str  # "client", "bot", "agent"
