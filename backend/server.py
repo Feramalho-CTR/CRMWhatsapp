@@ -383,6 +383,7 @@ class Message(BaseModel):
     client_id: str
     sender_type: str  # "client", "bot", "agent"
     sender_id: Optional[str] = None  # ID do agente se sender_type for "agent"
+    sender_name: Optional[str] = None  # Nome amigável do remetente
     content: str
     message_type: str = "text"  # "text", "document", "image", "video", "audio", "sticker"
     media_metadata: Optional[dict] = None  # { "url": "...", "filename": "...", "mime_type": "..." }
@@ -1297,6 +1298,7 @@ async def send_whatsapp_message(message_data: MessageCreate, current_user: User 
         client_id=message_data.client_id,
         sender_type=message_data.sender_type,
         sender_id=message_data.sender_id,
+        sender_name=current_user.full_name or current_user.username,
         content=message_data.content
     )
 

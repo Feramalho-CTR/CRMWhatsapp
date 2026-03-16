@@ -17,12 +17,15 @@ const ConversationList = ({ conversations, selectedConversation, onConversationS
     }
   };
 
-  const getStatusText = (status) => {
+  const getStatusText = (conv) => {
+    const status = conv.client.status;
+    const agentName = conv.client.agent_name;
+    
     switch (status) {
       case 'bot':
         return 'BOT';
       case 'human':
-        return 'HUMANO';
+        return agentName || 'HUMANO';
       case 'waiting':
         return 'AGUARDANDO';
       case 'finished':
@@ -138,7 +141,7 @@ const ConversationList = ({ conversations, selectedConversation, onConversationS
                         </div>
                       </div>
                       <Badge className={getStatusColor(conversation.client.status)}>
-                        {getStatusText(conversation.client.status)}
+                        {getStatusText(conversation)}
                       </Badge>
                     </div>
                     

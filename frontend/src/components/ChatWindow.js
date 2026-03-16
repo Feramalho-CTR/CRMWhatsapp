@@ -276,6 +276,7 @@ const ChatWindow = ({ conversation, currentUser, onSendMessage, onStatusUpdate, 
       client_id: conversation.client.id,
       sender_type: 'agent',
       sender_id: currentUser.id,
+      sender_name: currentUser.full_name || currentUser.username,
       content,
       timestamp: new Date().toISOString()
     };
@@ -290,7 +291,15 @@ const ChatWindow = ({ conversation, currentUser, onSendMessage, onStatusUpdate, 
       };
       const result = await onSendMessage(messageData);
       if (result && result.message_id) {
-        setMessages(prev => prev.map(m => m.id === tempId ? { ...m, id: result.message_id } : m));
+        setMessages(prev => {
+          // Verifica se a mensagem real já chegou via WebSocket
+          // Se já existir uma mensagem com esse ID, apenas remove a temporária
+          if (prev.some(m => m.id === result.message_id)) {
+            return prev.filter(m => m.id !== tempId);
+          }
+          // Caso contrário, mapeia a temporária para a real
+          return prev.map(m => m.id === tempId ? { ...m, ...(messageData.sender_name ? {sender_name: messageData.sender_name} : {}), id: result.message_id } : m);
+        });
         messageIdsRef.current.delete(tempId);
         messageIdsRef.current.add(result.message_id);
       }
@@ -298,10 +307,12 @@ const ChatWindow = ({ conversation, currentUser, onSendMessage, onStatusUpdate, 
       console.error('Erro ao enviar mensagem:', error);
       setMessages(prev => prev.filter(m => m.id !== tempId));
       messageIdsRef.current.delete(tempId);
+      // Mantém foco se falhar também
+      if (messageInputRef.current) messageInputRef.current.focus();
       if (typeof showToast === 'function') showToast('Erro ao enviar mensagem. Verifique a configuração da integração.', 'error');
     } finally {
       setSendingMessage(false);
-      // Garante foco novamente após terminar o envio (opcional, mas bom UX)
+      // Garante foco novamente após terminar o envio
       if (messageInputRef.current) messageInputRef.current.focus();
     }
   };
@@ -438,7 +449,7 @@ const ChatWindow = ({ conversation, currentUser, onSendMessage, onStatusUpdate, 
   const getStatusText = (status) => {
     switch (status) {
       case 'bot': return 'BOT';
-      case 'human': return 'HUMANO';
+      case 'human': return conversation.client.agent_name || 'HUMANO';
       case 'waiting': return 'AGUARDANDO';
       default: return status?.toUpperCase() || '';
     }
@@ -604,6 +615,16 @@ const ChatWindow = ({ conversation, currentUser, onSendMessage, onStatusUpdate, 
               data-testid={`message-${index}`}
             >
               <div className={`max-w-xs lg:max-w-md px-4 py-2 ${getMessageBubbleStyle(message.sender_type)}`}>
+                {['agent', 'bot'].includes(message.sender_type) && message.sender_name && (
+                  <div className="flex items-center mb-1 space-x-2 border-b border-white/20 pb-1">
+                    <div className="w-5 h-5 bg-white/20 rounded-full flex items-center justify-center text-[10px] font-bold uppercase">
+                      {message.sender_name.charAt(0)}
+                    </div>
+                    <span className="text-[10px] font-bold uppercase tracking-wider opacity-90">
+                      {message.sender_name}
+                    </span>
+                  </div>
+                )}
                 {message.message_type === 'image' && message.media_metadata?.url && (
                   <div className="mb-2">
                     <img src={message.media_metadata.url} alt={message.content} className="rounded-lg max-w-full h-auto cursor-pointer hover:opacity-90 transition-opacity" onClick={() => window.open(message.media_metadata.url, '_blank')} />
