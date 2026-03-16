@@ -873,106 +873,127 @@ async def obtain_whatsapp_app_token(admin_user: User = Depends(admin_required)):
 @api_router.get("/admin/agents-performance", response_model=List[AgentPerformance])
 async def get_agents_performance(admin_user: User = Depends(admin_required)):
     """Get performance metrics for all agents"""
-    agents = await db.users.find({"role": "agent"}).to_list(1000)
-    performance_list = []
-    
-    for agent in agents:
-        if not agent:
-            continue
-            
-        # Prioriza o ID do documento, fallback para campo interno
-        agent_id = agent.get("id") or agent.get("username")
-        if not agent_id:
-            continue
-            
-        # Conta o total de conversas atendidas por este agente
-        total_conversations = await db.clients.count_documents({"assigned_agent": agent_id})
+    try:
+        agents = await db.users.find({"role": "agent"}).to_list(1000)
+        performance_list = []
         
-    # Conta as conversas finalizadas hoje
         today_start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
-        conversations_today = await db.clients.count_documents({
-            "assigned_agent": agent_id,
-            "status": "finished",
-            "service_finished_at": {"$gte": today_start}
-        })
         
-        # Calcula o tempo médio de atendimento
-        # Filtramos por conversas que tenham tempos de início e fim presentes
-        finished_conversations = await db.clients.find({
-            "assigned_agent": agent_id,
-            "status": "finished"
-        }).to_list(1000)
+        for agent in agents:
+            if not agent:
+                continue
+                
+            # Prioriza o ID do documento, fallback para campo interno
+            agent_id = agent.get("id") or agent.get("username")
+            if not agent_id:
+                continue
+                
+            try:
+                # Conta o total de conversas atendidas por este agente
+                total_conversations = await db.clients.count_documents({"assigned_agent": agent_id})
+                
+                # Conta as conversas finalizadas hoje
+                conversations_today = await db.clients.count_documents({
+                    "assigned_agent": agent_id,
+                    "status": "finished",
+                    "service_finished_at": {"$gte": today_start}
+                })
+                
+                # Calcula o tempo médio de atendimento
+                finished_conversations = await db.clients.find({
+                    "assigned_agent": agent_id,
+                    "status": "finished"
+                }).to_list(1000)
+            except Exception as e:
+                logging.error(f"Erro ao buscar dados do agente {agent_id} no Firestore: {e}")
+                # Fallback em caso de erro de índice ou banco
+                total_conversations = 0
+                conversations_today = 0
+                finished_conversations = []
+            
+            total_duration = 0
+            count = 0
+            for conv in finished_conversations:
+                start = conv.get("service_started_at")
+                end = conv.get("service_finished_at")
+                # Valida se são realmente objetos datetime para evitar TypeError
+                if isinstance(start, datetime) and isinstance(end, datetime):
+                    duration = (end - start).total_seconds() / 60  # minutes
+                    total_duration += duration
+                    count += 1
+            
+            avg_response_time = total_duration / count if count > 0 else 0
+            
+            performance = AgentPerformance(
+                agent_id=str(agent_id),
+                agent_name=str(agent.get("full_name") or agent.get("username") or "Agente Desconhecido"),
+                total_conversations=total_conversations,
+                avg_response_time_minutes=round(avg_response_time, 2),
+                conversations_finished_today=conversations_today,
+                status=str(agent.get("status", "offline")),
+                last_activity=agent.get("last_activity") or agent.get("created_at") or datetime.now(timezone.utc)
+            )
+            performance_list.append(performance)
         
-        total_duration = 0
-        count = 0
-        for conv in finished_conversations:
-            if conv.get("service_started_at") and conv.get("service_finished_at"):
-                start = conv["service_started_at"]
-                end = conv["service_finished_at"]
-                duration = (end - start).total_seconds() / 60  # minutes
-                total_duration += duration
-                count += 1
-        
-        avg_response_time = total_duration / count if count > 0 else 0
-        
-        performance = AgentPerformance(
-            agent_id=agent_id,
-            agent_name=agent.get("full_name") or agent.get("username") or "Agente",
-            total_conversations=total_conversations,
-            avg_response_time_minutes=round(avg_response_time, 2),
-            conversations_finished_today=conversations_today,
-            status=agent.get("status", "offline"),
-            last_activity=agent.get("last_activity") or agent.get("created_at") or datetime.now(timezone.utc)
-        )
-        performance_list.append(performance)
-    
-    return performance_list
+        return performance_list
+    except Exception as e:
+        logging.error(f"Erro crítico em get_agents_performance: {e}", exc_info=True)
+        return []
 
 @api_router.get("/admin/service-metrics", response_model=List[ServiceMetrics])
 async def get_service_metrics(admin_user: User = Depends(admin_required)):
     """Get detailed service metrics"""
-    # Obtém conversas finalizadas nos últimos 30 dias
-    thirty_days_ago = datetime.now(timezone.utc) - timedelta(days=30)
-    
-    finished_conversations = await db.clients.find({
-        "status": "finished",
-        "service_finished_at": {"$gte": thirty_days_ago}
-    }).to_list(1000)
-    
-    metrics_list = []
-    for conv in finished_conversations:
-        agent_id = conv.get("assigned_agent")
-        # Pula se não tiver agente atribuído
-        if not agent_id:
-            continue
+    try:
+        # Obtém conversas finalizadas nos últimos 30 dias
+        thirty_days_ago = datetime.now(timezone.utc) - timedelta(days=30)
+        
+        try:
+            finished_conversations = await db.clients.find({
+                "status": "finished",
+                "service_finished_at": {"$gte": thirty_days_ago}
+            }).to_list(1000)
+        except Exception as e:
+            logging.error(f"Erro ao buscar métricas de serviço no Firestore (provavelmente índice ausente): {e}")
+            return []
             
-        # Obtém o nome do agente
-        agent = await db.users.find_one({"id": agent_id})
-        agent_name = "Desconhecido"
-        if agent:
-            agent_name = agent.get("full_name") or agent.get("username")
+        metrics_list = []
+        for conv in finished_conversations:
+            agent_id = conv.get("assigned_agent")
+            # Pula se não tiver agente atribuído
+            if not agent_id:
+                continue
+                
+            # Obtém o nome do agente
+            agent = await db.users.find_one({"id": agent_id})
+            agent_name = "Agente Desconhecido"
+            if agent:
+                agent_name = str(agent.get("full_name") or agent.get("username") or "Agente Desconhecido")
+            
+            # Calcula a duração de forma segura
+            duration = None
+            start = conv.get("service_started_at")
+            end = conv.get("service_finished_at")
+            
+            if isinstance(start, datetime) and isinstance(end, datetime):
+                duration = (end - start).total_seconds() / 60  # minutes
+            
+            metric = ServiceMetrics(
+                conversation_id=str(conv.get("id") or "unknown"),
+                client_phone=str(conv.get("phone_number") or conv.get("id") or "unknown"),
+                client_name=conv.get("name"),
+                agent_id=str(agent_id),
+                agent_name=agent_name,
+                service_duration_minutes=round(duration, 2) if duration else None,
+                started_at=start if isinstance(start, datetime) else (conv.get("created_at") if isinstance(conv.get("created_at"), datetime) else datetime.now(timezone.utc)),
+                finished_at=end if isinstance(end, datetime) else None
+            )
+            metrics_list.append(metric)
         
-    # Calcula a duração
-        duration = None
-        if conv.get("service_started_at") and conv.get("service_finished_at"):
-            start = conv["service_started_at"]
-            end = conv["service_finished_at"]
-            duration = (end - start).total_seconds() / 60  # minutes
-        
-        metric = ServiceMetrics(
-            conversation_id=conv.get("id") or "unknown",
-            client_phone=conv.get("phone_number") or conv.get("id") or "unknown",
-            client_name=conv.get("name"),
-            agent_id=agent_id,
-            agent_name=agent_name,
-            service_duration_minutes=round(duration, 2) if duration else None,
-            started_at=conv.get("service_started_at") or conv.get("created_at") or datetime.now(timezone.utc),
-            finished_at=conv.get("service_finished_at")
-        )
-        metrics_list.append(metric)
-    
-    # Ordenação segura por finished_at (pode ser None em alguns casos legados)
-    return sorted(metrics_list, key=lambda x: x.finished_at or datetime.min.replace(tzinfo=timezone.utc), reverse=True)
+        # Ordenação segura por finished_at (pode ser None em alguns casos legados)
+        return sorted(metrics_list, key=lambda x: x.finished_at or datetime.min.replace(tzinfo=timezone.utc), reverse=True)
+    except Exception as e:
+        logging.error(f"Erro crítico em get_service_metrics: {e}", exc_info=True)
+        return []
 
 # Rotas de status do agente
 @api_router.put("/agent/status")
