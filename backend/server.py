@@ -88,19 +88,40 @@ class _CollectionWrapper:
         self.col = _firestore_client.collection(collection_name)
 
     async def find_one(self, filter: dict):
-        return await asyncio.to_thread(self._find_one_sync, filter)
+        return await asyncio.to_thread(self._find_one_sync, filter or {})
 
     def _find_one_sync(self, filter: dict):
-        # If no filter provided, return the first document in the collection
         if not filter:
             docs = list(self.col.limit(1).stream())
-            return docs[0].to_dict() if docs else None
+            return clean_firestore_dict(docs[0].to_dict()) if docs else None
+        
         if 'id' in filter:
             doc = self.col.document(filter['id']).get()
-            return doc.to_dict() if doc.exists else None
-        key, val = next(iter(filter.items()))
-        docs = list(self.col.where(key, '==', val).limit(1).stream())
-        return docs[0].to_dict() if docs else None
+            return clean_firestore_dict(doc.to_dict()) if doc.exists else None
+        
+        # Constrói query com múltiplos filtros
+        query = self.col
+        for key, val in filter.items():
+            if isinstance(val, dict):
+                # Suporta operadores simples do MongoDB (ex: $ne, $gt, $lt)
+                for op_key, op_val in val.items():
+                    if op_key == '$ne':
+                        query = query.where(key, '!=', op_val)
+                    elif op_key == '$gt':
+                        query = query.where(key, '>', op_val)
+                    elif op_key == '$lt':
+                        query = query.where(key, '<', op_val)
+                    elif op_key == '$gte':
+                        query = query.where(key, '>=', op_val)
+                    elif op_key == '$lte':
+                        query = query.where(key, '<=', op_val)
+                    elif op_key == '$in':
+                        query = query.where(key, 'in', op_val)
+            else:
+                query = query.where(key, '==', val)
+        
+        docs = list(query.limit(1).stream())
+        return clean_firestore_dict(docs[0].to_dict()) if docs else None
 
     async def insert_one(self, doc: dict):
         return await asyncio.to_thread(self._insert_one_sync, doc)
@@ -193,11 +214,23 @@ class _CollectionWrapper:
                 return await asyncio.to_thread(self._to_list_sync, n)
             def _to_list_sync(self, n):
                 if not self.filter:
-                    docs = list(wrapper.col.stream())
+                    query = wrapper.col
                 else:
-                    key, val = next(iter(self.filter.items()))
-                    docs = list(wrapper.col.where(key, '==', val).stream())
-                results = [d.to_dict() for d in docs]
+                    query = wrapper.col
+                    for key, val in self.filter.items():
+                        if isinstance(val, dict):
+                            for op_key, op_val in val.items():
+                                if op_key == '$ne': query = query.where(key, '!=', op_val)
+                                elif op_key == '$gt': query = query.where(key, '>', op_val)
+                                elif op_key == '$lt': query = query.where(key, '<', op_val)
+                                elif op_key == '$gte': query = query.where(key, '>=', op_val)
+                                elif op_key == '$lte': query = query.where(key, '<=', op_val)
+                                elif op_key == '$in': query = query.where(key, 'in', op_val)
+                        else:
+                            query = query.where(key, '==', val)
+                
+                docs = list(query.stream())
+                results = [clean_firestore_dict(d.to_dict()) for d in docs]
                 if self._sort:
                     key, direction = self._sort
                     reverse = True if direction < 0 else False
