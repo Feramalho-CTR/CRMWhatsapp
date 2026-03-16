@@ -1478,12 +1478,15 @@ async def get_conversations(current_user: User = Depends(get_current_user)):
     clients_to_show = sorted(deduplicated_clients.values(), key=lambda x: x.get("last_interaction") or datetime.min.replace(tzinfo=timezone.utc), reverse=True)
     
     for client_data in clients_to_show:
-        # Obtém informações do agente se atribuído
+        # Obtém informações do agente com proteção para não quebrar a barra lateral
         agent_name = None
         if client_data.get("assigned_agent"):
-            agent = await db.users.find_one({"id": client_data["assigned_agent"]})
-            if agent:
-                agent_name = agent.get("full_name") or agent.get("username")
+            try:
+                agent = await db.users.find_one({"id": client_data["assigned_agent"]})
+                if agent:
+                    agent_name = agent.get("full_name") or agent.get("username")
+            except Exception as e:
+                logging.error(f"Erro ao buscar agente {client_data.get('assigned_agent')} para sidebar: {e}")
         
         client = Client(**client_data)
         # Adiciona agent_name aos dados do cliente
@@ -1746,164 +1749,169 @@ async def whatsapp_webhook(request: Request):
         # Processa cada mensagem encontrada
         created = 0
         for m, value in messages:
-            # Verifica se é uma mensagem de sync do bot
-            is_bot_msg = value.get("is_bot") is True
-            
-            # phone number
-            phone_number = None
-            # prioridade: contatos do value (apenas para Meta Cloud)
-            if not is_bot_msg and value and value.get("contacts"):
-                phone_number = value.get("contacts")[0].get("wa_id")
-            # fallback para campo 'from' na mensagem
-            if not phone_number:
-                phone_number = m.get("from") or m.get("from_number") or m.get("wa_id")
-
-            # extrai conteúdo e tipo de mensagem
-            m_type = value.get("message_type") or m.get("type", "text")
-            content = ""
-            media_md = value.get("media_metadata") or None
-
-            if media_md and not content:
-                content = m.get("text", {}).get("body", "") or ""
-
-            if m_type == "text":
-                content = content or m.get("text", {}).get("body", "")
-            elif m_type == "document":
-                # Se ainda não temos metadados (Meta Cloud), tenta extrair do 'm'
-                if not media_md:
-                    doc = m.get("document", {})
-                    content = doc.get("caption") or doc.get("filename") or "Documento"
-                    media_md = {
-                        "id": doc.get("id"),
-                        "filename": doc.get("filename"),
-                        "mime_type": doc.get("mime_type"),
-                        "sha256": doc.get("sha256")
-                    }
-                else:
-                    # Se já temos metadados (Sync do Bot), apenas garante o content
-                    content = content or "Documento"
-            elif m_type == "image":
-                if not media_md:
-                    img = m.get("image", {})
-                    content = img.get("caption") or "Imagem"
-                    media_md = {
-                        "id": img.get("id"),
-                        "mime_type": img.get("mime_type"),
-                        "sha256": img.get("sha256")
-                    }
-                else:
-                    content = content or "Imagem"
-            elif m_type == "audio" or m_type == "voice":
-                if not media_md:
-                    aud = m.get("audio") or m.get("voice") or {}
-                    content = "Áudio"
-                    media_md = {"id": aud.get("id"), "mime_type": aud.get("mime_type")}
-                else:
-                    content = content or "Áudio"
-            elif m_type == "video":
-                if not media_md:
-                    vid = m.get("video", {})
-                    content = vid.get("caption") or "Vídeo"
-                    media_md = {"id": vid.get("id"), "mime_type": vid.get("mime_type")}
-                else:
-                    content = content or "Vídeo"
-            elif m_type == "contacts" or m.get("type") == "contacts":
-                m_type = "contacts"
-                contacts_data = m.get("contacts", [])
-                # Use json.dumps to ensure valid JSON with double quotes
-                content = json.dumps(contacts_data, ensure_ascii=False)
-            elif m_type == "sticker" or m.get("type") == "sticker":
-                m_type = "sticker"
-                if not media_md:
-                    stk = m.get("sticker", {})
-                    content = "Sticker"
-                    media_md = {"id": stk.get("id"), "mime_type": stk.get("mime_type")}
-                else:
-                    content = content or "Sticker"
-            elif m.get("text"):
-                content = m.get("text", {}).get("body", "")
-            else:
-                # se for outro tipo e tiver body no text, usa ele
-                content = str(m)
-
-            # Normaliza e encontra/insere cliente
-            phone_norm = normalize_phone(phone_number)
-            if not phone_norm:
-                continue
-                
-            # Busca agressiva para evitar duplicidade
-            client = await db.clients.find_one({"id": phone_norm})
-            if not client:
-                # Tenta pelo campo phone_number (alguns podem estar salvos com o valor puro)
-                client = await db.clients.find_one({"phone_number": phone_norm})
-            if not client:
-                # Tenta pelo campo phone_number original (pode conter +, espaços, etc)
-                client = await db.clients.find_one({"phone_number": phone_number})
-                
-            if not client:
-                # cria cliente usando phone_normalized como id
-                display = (m.get("profile", {}).get("name") if m.get("profile") else f"Cliente {phone_number}")
-                new_client = Client(phone_number=phone_norm, name=display)
-                new_client_dict = new_client.dict()
-                # garantir status inicial como bot e sem agente atribuído
-                new_client_dict['status'] = 'bot'
-                new_client_dict['assigned_agent'] = None
-                new_client_dict['agent_name'] = None
-                new_client_dict['display_name'] = display
-                new_client_dict['phone_normalized'] = phone_norm
-                new_client_dict['short_id'] = (phone_norm or new_client_dict['id'])[:8]
-                new_client_dict['label'] = f"{phone_number} — {display}"
-                new_client_dict['id'] = phone_norm # Força o ID a ser o telefone normalizado
-                
-                await asyncio.to_thread(lambda: _firestore_client.collection('clients').document(phone_norm).set(new_client_dict))
-                client_id = phone_norm
-            else:
-                client_id = client.get("id") or client.get("phone_normalized") or phone_norm
-                # Se o cliente já existe, NÃO sobrescrevemos o documento inteiro,
-                # apenas atualizamos o que for necessário depois.
-
-
-            # Cria mensagem (entrada ou saída automática)
-            message = Message(
-                client_id=client_id,
-                sender_type="bot" if is_bot_msg else "client",
-                content=content,
-                message_type=m_type,
-                media_metadata=media_md
-            )
-
-            # Salva na sub-coleção clients/{client_id}/messages (consistente com leitura)
-            if _firestore_client is not None:
-                msg_dict_save = message.dict()
-                # Guarda o ID externo do WhatsApp se disponível
-                if m.get('id'):
-                    msg_dict_save['message_id_external'] = m.get('id')
-                await asyncio.to_thread(
-                    lambda md=msg_dict_save, cid=client_id, mid=message.id:
-                        _firestore_client.collection('clients').document(cid)
-                            .collection('messages').document(mid).set(md)
-                )
-            else:
-                await db.messages.insert_one(message.dict())
-
-            # Atualiza a última interação do cliente
-            await db.clients.update_one({"id": client_id}, {"$set": {"last_interaction": message.timestamp}})
-            created += 1
-
-            # Notifica o frontend via WebSocket — nova mensagem recebida
             try:
-                msg_dict_ws = message.dict()
-                msg_dict_ws['timestamp'] = message.timestamp.isoformat()
-                await ws_manager.broadcast({
-                    'type': 'new_message',
-                    'client_id': client_id,
-                    'message': msg_dict_ws
-                })
-            except Exception:
-                pass
+                # Verifica se é uma mensagem de sync do bot
+                is_bot_msg = value.get("is_bot") is True
+                
+                # phone number
+                phone_number = None
+                # prioridade: contatos do value (apenas para Meta Cloud)
+                if not is_bot_msg and value and value.get("contacts"):
+                    phone_number = value.get("contacts")[0].get("wa_id")
+                # fallback para campo 'from' na mensagem
+                if not phone_number:
+                    phone_number = m.get("from") or m.get("from_number") or m.get("wa_id")
+
+                # extrai conteúdo e tipo de mensagem
+                m_type = value.get("message_type") or m.get("type", "text")
+                content = ""
+                media_md = value.get("media_metadata") or None
+
+                if media_md and not content:
+                    content = m.get("text", {}).get("body", "") or ""
+
+                if m_type == "text":
+                    content = content or m.get("text", {}).get("body", "")
+                elif m_type == "document":
+                    # Se ainda não temos metadados (Meta Cloud), tenta extrair do 'm'
+                    if not media_md:
+                        doc = m.get("document", {})
+                        content = doc.get("caption") or doc.get("filename") or "Documento"
+                        media_md = {
+                            "id": doc.get("id"),
+                            "filename": doc.get("filename"),
+                            "mime_type": doc.get("mime_type"),
+                            "sha256": doc.get("sha256")
+                        }
+                    else:
+                        # Se já temos metadados (Sync do Bot), apenas garante o content
+                        content = content or "Documento"
+                elif m_type == "image":
+                    if not media_md:
+                        img = m.get("image", {})
+                        content = img.get("caption") or "Imagem"
+                        media_md = {
+                            "id": img.get("id"),
+                            "mime_type": img.get("mime_type"),
+                            "sha256": img.get("sha256")
+                        }
+                    else:
+                        content = content or "Imagem"
+                elif m_type == "audio" or m_type == "voice":
+                    if not media_md:
+                        aud = m.get("audio") or m.get("voice") or {}
+                        content = "Áudio"
+                        media_md = {"id": aud.get("id"), "mime_type": aud.get("mime_type")}
+                    else:
+                        content = content or "Áudio"
+                elif m_type == "video":
+                    if not media_md:
+                        vid = m.get("video", {})
+                        content = vid.get("caption") or "Vídeo"
+                        media_md = {"id": vid.get("id"), "mime_type": vid.get("mime_type")}
+                    else:
+                        content = content or "Vídeo"
+                elif m_type == "contacts" or m.get("type") == "contacts":
+                    m_type = "contacts"
+                    contacts_data = m.get("contacts", [])
+                    # Use json.dumps to ensure valid JSON with double quotes
+                    content = json.dumps(contacts_data, ensure_ascii=False)
+                elif m_type == "sticker" or m.get("type") == "sticker":
+                    m_type = "sticker"
+                    if not media_md:
+                        stk = m.get("sticker", {})
+                        content = "Sticker"
+                        media_md = {"id": stk.get("id"), "mime_type": stk.get("mime_type")}
+                    else:
+                        content = content or "Sticker"
+                elif m.get("text"):
+                    content = m.get("text", {}).get("body", "")
+                else:
+                    # se for outro tipo e tiver body no text, usa ele
+                    content = str(m)
+
+                # Normaliza e encontra/insere cliente
+                phone_norm = normalize_phone(phone_number)
+                if not phone_norm:
+                    continue
+                    
+                # Busca agressiva para evitar duplicidade
+                client = await db.clients.find_one({"id": phone_norm})
+                if not client:
+                    # Tenta pelo campo phone_number (alguns podem estar salvos com o valor puro)
+                    client = await db.clients.find_one({"phone_number": phone_norm})
+                if not client:
+                    # Tenta pelo campo phone_number original (pode conter +, espaços, etc)
+                    client = await db.clients.find_one({"phone_number": phone_number})
+                    
+                if not client:
+                    # cria cliente usando phone_normalized como id
+                    display = (m.get("profile", {}).get("name") if m.get("profile") else f"Cliente {phone_number}")
+                    new_client = Client(phone_number=phone_norm, name=display)
+                    new_client_dict = new_client.dict()
+                    # garantir status inicial como bot e sem agente atribuído
+                    new_client_dict['status'] = 'bot'
+                    new_client_dict['assigned_agent'] = None
+                    new_client_dict['agent_name'] = None
+                    new_client_dict['display_name'] = display
+                    new_client_dict['phone_normalized'] = phone_norm
+                    new_client_dict['short_id'] = (phone_norm or new_client_dict['id'])[:8]
+                    new_client_dict['label'] = f"{phone_number} — {display}"
+                    new_client_dict['id'] = phone_norm # Força o ID a ser o telefone normalizado
+                    
+                    await asyncio.to_thread(lambda: _firestore_client.collection('clients').document(phone_norm).set(new_client_dict))
+                    client_id = phone_norm
+                else:
+                    client_id = client.get("id") or client.get("phone_normalized") or phone_norm
+                    # Se o cliente já existe, NÃO sobrescrevemos o documento inteiro,
+                    # apenas atualizamos o que for necessário depois.
+
+
+                # Cria mensagem (entrada ou saída automática)
+                message = Message(
+                    client_id=client_id,
+                    sender_type="bot" if is_bot_msg else "client",
+                    content=content,
+                    message_type=m_type,
+                    media_metadata=media_md
+                )
+
+                # Salva na sub-coleção clients/{client_id}/messages (consistente com leitura)
+                if _firestore_client is not None:
+                    msg_dict_save = message.dict()
+                    # Guarda o ID externo do WhatsApp se disponível
+                    if m.get('id'):
+                        msg_dict_save['message_id_external'] = m.get('id')
+                    await asyncio.to_thread(
+                        lambda md=msg_dict_save, cid=client_id, mid=message.id:
+                            _firestore_client.collection('clients').document(cid)
+                                .collection('messages').document(mid).set(md)
+                    )
+                else:
+                    await db.messages.insert_one(message.dict())
+
+                # Atualiza a última interação do cliente
+                await db.clients.update_one({"id": client_id}, {"$set": {"last_interaction": message.timestamp}})
+                created += 1
+
+                # Notifica o frontend via WebSocket — nova mensagem recebida
+                try:
+                    msg_dict_ws = message.dict()
+                    msg_dict_ws['timestamp'] = message.timestamp.isoformat()
+                    await ws_manager.broadcast({
+                        'type': 'new_message',
+                        'client_id': client_id,
+                        'message': msg_dict_ws
+                    })
+                except Exception:
+                    pass
+            except Exception as e:
+                logging.error(f"Erro individual ao processar mensagem do webhook: {e}", exc_info=True)
+                continue
 
         return {"success": True, "created": created}
     except Exception as e:
+        logging.error(f"Erro crítico no processamento do lote do webhook: {e}")
         return {"success": False, "error": str(e)}
 
 
