@@ -297,14 +297,25 @@ app.add_middleware(
 )
 
 @app.middleware("http")
-async def add_cors_header_to_errors(request, call_next):
-    """Garante que erros 500 também tenham headers CORS para que o frontend veja o erro real."""
-    response = await call_next(request)
-    origin = request.headers.get("origin")
-    if origin in ORIGINS:
-        response.headers["Access-Control-Allow-Origin"] = origin
-        response.headers["Access-Control-Allow-Credentials"] = "true"
-    return response
+async def add_cors_header_to_errors(request: Request, call_next):
+    """Garante que erros também tenham headers CORS para que o frontend veja o erro real."""
+    try:
+        response = await call_next(request)
+        origin = request.headers.get("origin")
+        if origin in ORIGINS:
+            response.headers["Access-Control-Allow-Origin"] = origin
+            response.headers["Access-Control-Allow-Credentials"] = "true"
+        return response
+    except Exception as e:
+        logging.error(f"ERRO NÃO TRATADO NO MIDDLEWARE: {str(e)}", exc_info=True)
+        from fastapi.responses import JSONResponse
+        content = {"detail": f"Erro interno do servidor: {str(e)}", "type": "unhandled_exception"}
+        response = JSONResponse(status_code=500, content=content)
+        origin = request.headers.get("origin")
+        if origin in ORIGINS:
+            response.headers["Access-Control-Allow-Origin"] = origin
+            response.headers["Access-Control-Allow-Credentials"] = "true"
+        return response
 
 
 
@@ -353,6 +364,7 @@ class User(BaseModel):
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 class WhatsAppConfig(BaseModel):
+    model_config = ConfigDict(extra='ignore')
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     access_token: str = ""
     phone_number_id: str = ""
@@ -382,6 +394,7 @@ class AgentStatus(BaseModel):
     status: str  # "online", "busy", "paused", "offline"
 
 class AgentPerformance(BaseModel):
+    model_config = ConfigDict(extra='ignore')
     agent_id: str
     agent_name: str
     total_conversations: int
@@ -391,6 +404,7 @@ class AgentPerformance(BaseModel):
     last_activity: datetime
 
 class ServiceMetrics(BaseModel):
+    model_config = ConfigDict(extra='ignore')
     conversation_id: str
     client_phone: str
     client_name: Optional[str]
@@ -1040,20 +1054,14 @@ async def update_profile(profile_data: UserUpdate, current_user: User = Depends(
     
     # Verifica se o nome de usuário é único (se estiver sendo atualizado)
     if "username" in update_data:
-        existing_user = await db.users.find_one({
-            "username": update_data["username"],
-            "id": {"$ne": current_user.id}
-        })
-        if existing_user:
+        existing = await db.users.find_one({"username": update_data["username"]})
+        if existing and existing.get("id") != current_user.id:
             raise HTTPException(status_code=400, detail="Nome de usuário já cadastrado")
     
     # Verifica se o email é único (se estiver sendo atualizado)
     if "email" in update_data:
-        existing_user = await db.users.find_one({
-            "email": update_data["email"],
-            "id": {"$ne": current_user.id}
-        })
-        if existing_user:
+        existing = await db.users.find_one({"email": update_data["email"]})
+        if existing and existing.get("id") != current_user.id:
             raise HTTPException(status_code=400, detail="Email já cadastrado")
     
     if update_data:
@@ -1091,20 +1099,14 @@ async def update_user(user_id: str, user_data: UserUpdate, admin_user: User = De
     
     # Verifica se o nome de usuário é único (se estiver sendo atualizado)
     if "username" in update_data:
-        existing_user = await db.users.find_one({
-            "username": update_data["username"],
-            "id": {"$ne": user_id}
-        })
-        if existing_user:
+        existing = await db.users.find_one({"username": update_data["username"]})
+        if existing and existing.get("id") != user_id:
             raise HTTPException(status_code=400, detail="Nome de usuário já cadastrado")
     
     # Verifica se o email é único (se estiver sendo atualizado)
     if "email" in update_data:
-        existing_user = await db.users.find_one({
-            "email": update_data["email"],
-            "id": {"$ne": user_id}
-        })
-        if existing_user:
+        existing = await db.users.find_one({"email": update_data["email"]})
+        if existing and existing.get("id") != user_id:
             raise HTTPException(status_code=400, detail="Email já cadastrado")
     
     result = await db.users.update_one(
