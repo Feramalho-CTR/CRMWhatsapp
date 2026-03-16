@@ -285,7 +285,7 @@ const AdminPanel = ({ user, onBack }) => {
                         </div>
                         <div className="flex justify-between">
                           <span className="text-gray-600">Tempo médio:</span>
-                          <span className="font-medium">{agent.avg_response_time_minutes}min</span>
+                          <span className="font-medium">{agent.avg_response_time_minutes}</span>
                         </div>
                         <div className="flex justify-between">
                           <span className="text-gray-600">Última atividade:</span>

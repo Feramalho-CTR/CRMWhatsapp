@@ -437,7 +437,7 @@ class AgentPerformance(BaseModel):
     agent_id: str
     agent_name: str
     total_conversations: int
-    avg_response_time_minutes: float
+    avg_response_time_minutes: str # Formato "MM:SS"
     conversations_finished_today: int
     status: str
     last_activity: Optional[datetime] = None
@@ -924,11 +924,16 @@ async def get_agents_performance(admin_user: User = Depends(admin_required)):
             
             avg_response_time = total_duration / count if count > 0 else 0
             
+            # Converte de decimal para formato de relógio "MM:SS"
+            minutes = int(avg_response_time)
+            seconds = int((avg_response_time - minutes) * 60)
+            avg_time_formatted = f"{minutes:02d}:{seconds:02d}"
+            
             performance = AgentPerformance(
                 agent_id=str(agent_id),
                 agent_name=str(agent.get("full_name") or agent.get("username") or "Agente Desconhecido"),
                 total_conversations=total_conversations,
-                avg_response_time_minutes=round(avg_response_time, 2),
+                avg_response_time_minutes=avg_time_formatted,
                 conversations_finished_today=conversations_today,
                 status=str(agent.get("status", "offline")),
                 last_activity=agent.get("last_activity") or agent.get("created_at") or datetime.now(timezone.utc)
