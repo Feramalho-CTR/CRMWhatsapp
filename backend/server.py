@@ -207,18 +207,40 @@ class _CollectionWrapper:
             if not docs:
                 return {'deleted_count': 0}
             self.col.document(docs[0].id).delete()
-            return {'deleted_count': 1}
-
     async def count_documents(self, filter: dict):
         return await asyncio.to_thread(self._count_documents_sync, filter)
 
     def _count_documents_sync(self, filter: dict):
         if not filter:
-            docs = list(self.col.stream())
+            # Uso de agregação para contagem eficiente (se disponível)
+            try:
+                return self.col.count().get()[0][0].value
+            except Exception:
+                docs = list(self.col.stream())
+                return len(docs)
+        
+        query = self.col
+        for key, val in filter.items():
+            if isinstance(val, dict):
+                for op_key, op_val in val.items():
+                    if op_key == '$ne': query = query.where(key, '!=', op_val)
+                    elif op_key == '$gt': query = query.where(key, '>', op_val)
+                    elif op_key == '$lt': query = query.where(key, '<', op_val)
+                    elif op_key == '$gte': query = query.where(key, '>=', op_val)
+                    elif op_key == '$lte': query = query.where(key, '<=', op_val)
+                    elif op_key == '$in': query = query.where(key, 'in', op_val)
+                    elif op_key == '$exists':
+                        # Firestore não tem $exists direto, mas podemos aproximar
+                        pass
+            else:
+                query = query.where(key, '==', val)
+        
+        try:
+            # Tenta contagem otimizada
+            return query.count().get()[0][0].value
+        except Exception:
+            docs = list(query.stream())
             return len(docs)
-        key, val = next(iter(filter.items()))
-        docs = list(self.col.where(key, '==', val).stream())
-        return len(docs)
 
     def find(self, filter: dict = None):
         wrapper = self
@@ -237,10 +259,8 @@ class _CollectionWrapper:
             async def to_list(self, n=1000):
                 return await asyncio.to_thread(self._to_list_sync, n)
             def _to_list_sync(self, n):
-                if not self.filter:
-                    query = wrapper.col
-                else:
-                    query = wrapper.col
+                query = wrapper.col
+                if self.filter:
                     for key, val in self.filter.items():
                         if isinstance(val, dict):
                             for op_key, op_val in val.items():
@@ -831,11 +851,11 @@ async def get_agents_performance(admin_user: User = Depends(admin_required)):
             "service_finished_at": {"$gte": today_start}
         })
         
-    # Calcula o tempo médio de atendimento
+        # Calcula o tempo médio de atendimento
+        # Filtramos por conversas que tenham tempos de início e fim presentes
         finished_conversations = await db.clients.find({
             "assigned_agent": agent_id,
-            "service_started_at": {"$exists": True},
-            "service_finished_at": {"$exists": True}
+            "status": "finished"
         }).to_list(1000)
         
         total_duration = 0
@@ -852,7 +872,7 @@ async def get_agents_performance(admin_user: User = Depends(admin_required)):
         
         performance = AgentPerformance(
             agent_id=agent_id,
-            agent_name=agent["username"],
+            agent_name=agent.get("full_name") or agent.get("username"),
             total_conversations=total_conversations,
             avg_response_time_minutes=round(avg_response_time, 2),
             conversations_finished_today=conversations_today,
@@ -871,15 +891,20 @@ async def get_service_metrics(admin_user: User = Depends(admin_required)):
     
     finished_conversations = await db.clients.find({
         "status": "finished",
-        "service_finished_at": {"$gte": thirty_days_ago},
-        "assigned_agent": {"$exists": True}
+        "service_finished_at": {"$gte": thirty_days_ago}
     }).to_list(1000)
     
     metrics_list = []
     for conv in finished_conversations:
-    # Obtém o nome do agente
+        # Pula se não tiver agente atribuído
+        if not conv.get("assigned_agent"):
+            continue
+            
+        # Obtém o nome do agente
         agent = await db.users.find_one({"id": conv["assigned_agent"]})
-        agent_name = agent["username"] if agent else "Desconhecido"
+        agent_name = "Desconhecido"
+        if agent:
+            agent_name = agent.get("full_name") or agent.get("username")
         
     # Calcula a duração
         duration = None
