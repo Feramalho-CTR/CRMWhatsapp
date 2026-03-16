@@ -274,7 +274,13 @@ class _CollectionWrapper:
                             query = query.where(key, '==', val)
                 
                 docs = list(query.stream())
-                results = [clean_firestore_dict(d.to_dict()) for d in docs]
+                results = []
+                for d in docs:
+                    data = clean_firestore_dict(d.to_dict()) or {}
+                    # Garante que o ID do documento esteja presente no dicionário
+                    if 'id' not in data:
+                        data['id'] = d.id
+                    results.append(data)
                 if self._sort:
                     key, direction = self._sort
                     reverse = True if direction < 0 else False
@@ -838,9 +844,15 @@ async def get_agents_performance(admin_user: User = Depends(admin_required)):
     performance_list = []
     
     for agent in agents:
-        agent_id = agent["id"]
-        
-    # Conta o total de conversas atendidas por este agente
+        if not agent:
+            continue
+            
+        # Prioriza o ID do documento, fallback para campo interno
+        agent_id = agent.get("id") or agent.get("username")
+        if not agent_id:
+            continue
+            
+        # Conta o total de conversas atendidas por este agente
         total_conversations = await db.clients.count_documents({"assigned_agent": agent_id})
         
     # Conta as conversas finalizadas hoje
