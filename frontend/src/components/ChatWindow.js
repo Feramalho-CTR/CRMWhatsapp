@@ -99,7 +99,8 @@ const AssignAgentModal = ({ clientName, onAssign, onCancel }) => {
     const fetchAgents = async () => {
       try {
         const res = await api.get('/admin/users');
-        const filtered = res.data.filter(u => u.role === 'agent' || u.role === 'admin');
+        // Mostra todos os usuários ativos — garante que agentes recém-criados apareçam
+        const filtered = res.data.filter(u => u.is_active !== false);
         setAgents(filtered);
       } catch (e) {
         console.error('Erro ao buscar agentes:', e);
