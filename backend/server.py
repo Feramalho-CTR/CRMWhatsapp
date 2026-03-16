@@ -967,12 +967,13 @@ async def accept_service(client_id: str, current_user: User = Depends(get_curren
     if not client:
         raise HTTPException(status_code=404, detail="Cliente não encontrado")
 
-    # Agentes NÃO podem aceitar um atendimento que já está sendo feito por humano.
-    # Apenas admins podem fazer isso (via o endpoint de assign ou confirmação de senha).
-    if client.get('status') == 'human' and client.get('assigned_agent') and current_user.role != 'admin':
+    # Agentes SÓ podem aceitar um atendimento que está com o BOT.
+    # Não podem assumir se já estiver com humano (human), aguardando (waiting) ou finalizado (finished).
+    if client.get('status') != 'bot' and current_user.role != 'admin':
+        status_atual = client.get('status', 'desconhecido')
         raise HTTPException(
             status_code=403,
-            detail='Este atendimento já está sendo realizado por outro atendente. Apenas administradores podem assumir atendimentos em andamento.'
+            detail=f'Agentes só podem assumir conversas que estão com o BOT. Status atual: {status_atual}.'
         )
 
     is_admin = current_user.role == 'admin'
@@ -992,11 +993,9 @@ async def accept_service(client_id: str, current_user: User = Depends(get_curren
                 current_status = snap.get('status')
                 current_assigned = snap.get('assigned_agent')
                 
-                # Admins podem sobrescrever sempre. 
-                # Agentes normais só podem assumir se o status NÃO for 'human'.
-                # Se o status for 'human' e já houver alguém, bloqueia agentes.
-                if current_status == 'human' and current_assigned and not is_admin:
-                    return {'ok': False, 'reason': 'already_assigned', 'current_agent': current_assigned}
+                # Agentes normais só podem assumir se o status for 'bot'.
+                if current_status != 'bot' and not is_admin:
+                    return {'ok': False, 'reason': 'not_allowed', 'current_status': current_status}
                 
                 update_data = {
                     'status': 'human',
@@ -1013,8 +1012,8 @@ async def accept_service(client_id: str, current_user: User = Depends(get_curren
             if result.get('reason') == 'not_found':
                 raise HTTPException(status_code=404, detail='Cliente não encontrado')
             else:
-                current_ag = result.get('current_agent', 'unknown')
-                raise HTTPException(status_code=409, detail=f'Atendimento já está sendo realizado pelo agente {current_ag}')
+                curr_st = result.get('current_status', 'unknown')
+                raise HTTPException(status_code=403, detail=f'Não é permitido assumir esta conversa. Status: {curr_st}')
         else:
             # broadcast event to connected frontends
             try:
@@ -1031,8 +1030,8 @@ async def accept_service(client_id: str, current_user: User = Depends(get_curren
     else:
         # fallback sem transação
         latest = await db.clients.find_one({"id": client_id})
-        if latest.get('status') == 'human' and latest.get('assigned_agent') and not is_admin:
-            raise HTTPException(status_code=409, detail='Atendimento já está sendo realizado por outro agente')
+        if latest.get('status') != 'bot' and not is_admin:
+            raise HTTPException(status_code=403, detail=f"Agentes não podem assumir conversas fora do modo BOT. Status: {latest.get('status')}")
         update_data = {
             "status": "human",
             "assigned_agent": current_user.id,
@@ -1246,6 +1245,24 @@ async def create_client(client_data: ClientCreate, current_user: User = Depends(
 async def update_client(client_id: str, client_data: ClientUpdate, current_user: User = Depends(get_current_user)):
     update_dict = client_data.dict(exclude_unset=True)
     update_data = {k: v for k, v in update_dict.items() if v is not None}
+    
+    # Busca cliente atual para validação de segurança
+    current_client = await db.clients.find_one({"id": client_id})
+    if not current_client:
+        raise HTTPException(status_code=404, detail="Client not found")
+
+    # RESTRIÇÃO: Agentes não podem mudar status/atribuição de conversas que não são deles
+    is_admin = current_user.role == "admin"
+    changing_critical = "status" in update_data or "assigned_agent" in update_data
+    
+    if not is_admin and changing_critical:
+        assigned_to = current_client.get("assigned_agent")
+        # Se estiver atribuído a outra pessoa E não for o BOT, bloqueia
+        if assigned_to and assigned_to != current_user.id:
+            raise HTTPException(
+                status_code=403, 
+                detail="Você não tem permissão para alterar o status de uma conversa atribuída a outro atendente."
+            )
     
     # Se mudar o nome, sincroniza display_name e label
     if "name" in update_data:
