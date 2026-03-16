@@ -191,6 +191,7 @@ const ChatWindow = ({ conversation, currentUser, onSendMessage, onStatusUpdate, 
   const messagesEndRef = useRef(null);
   const messageIdsRef = useRef(new Set());
   const nameInputRef = useRef(null);
+  const messageInputRef = useRef(null);
 
   const isAdmin = currentUser?.role === 'admin';
 
@@ -227,14 +228,33 @@ const ChatWindow = ({ conversation, currentUser, onSendMessage, onStatusUpdate, 
   useEffect(() => {
     if (!externalMessages || externalMessages.length === 0) return;
     setMessages(prev => {
+      // Cria um mapa de conteúdos de mensagens "temporárias" para de-duplicação inteligente
+      const tempMessages = prev.filter(m => m.id.startsWith('temp-'));
       const existingIds = new Set(prev.map(m => m.id));
-      const toAdd = externalMessages.filter(m => !existingIds.has(m.id));
+      
+      const toAdd = externalMessages.filter(m => {
+        // Se já tem o ID, ignora
+        if (existingIds.has(m.id)) return false;
+        
+        // Se for uma mensagem do agente (enviada por nós), verifica se o conteúdo 
+        // é idêntico a alguma mensagem temporária ainda pendente.
+        if (m.sender_type === 'agent' && m.sender_id === currentUser.id) {
+          const isDuplicateOfTemp = tempMessages.some(temp => 
+            temp.content === m.content && 
+            Math.abs(new Date(temp.timestamp) - new Date(m.timestamp)) < 10000 // janela de 10s
+          );
+          if (isDuplicateOfTemp) return false;
+        }
+        
+        return true;
+      });
+      
       if (toAdd.length === 0) return prev;
       const updated = [...prev, ...toAdd];
       messageIdsRef.current = new Set(updated.map(m => m.id));
       return updated;
     });
-  }, [externalMessages]);
+  }, [externalMessages, currentUser.id]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -246,6 +266,10 @@ const ChatWindow = ({ conversation, currentUser, onSendMessage, onStatusUpdate, 
     setSendingMessage(true);
     const content = newMessage.trim();
     setNewMessage('');
+    
+    // Mantém o foco no input
+    if (messageInputRef.current) messageInputRef.current.focus();
+
     const tempId = `temp-${Date.now()}`;
     const tempMessage = {
       id: tempId,
@@ -277,6 +301,8 @@ const ChatWindow = ({ conversation, currentUser, onSendMessage, onStatusUpdate, 
       if (typeof showToast === 'function') showToast('Erro ao enviar mensagem. Verifique a configuração da integração.', 'error');
     } finally {
       setSendingMessage(false);
+      // Garante foco novamente após terminar o envio (opcional, mas bom UX)
+      if (messageInputRef.current) messageInputRef.current.focus();
     }
   };
 
@@ -625,6 +651,7 @@ const ChatWindow = ({ conversation, currentUser, onSendMessage, onStatusUpdate, 
         ) : (
           <form onSubmit={handleSendMessage} className="flex space-x-3">
             <Input
+              ref={messageInputRef}
               value={newMessage}
               onChange={(e) => setNewMessage(e.target.value)}
               placeholder="Digite sua mensagem..."

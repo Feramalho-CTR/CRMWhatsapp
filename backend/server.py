@@ -892,10 +892,16 @@ async def accept_service(client_id: str, current_user: User = Depends(get_curren
                 snap = dr.get(transaction=txn)
                 if not snap.exists:
                     return {'ok': False, 'reason': 'not_found'}
+                
+                current_status = snap.get('status')
                 current_assigned = snap.get('assigned_agent')
-                # Admins podem sobrescrever — agentes normais não
-                if current_assigned and not is_admin:
+                
+                # Admins podem sobrescrever sempre. 
+                # Agentes normais só podem assumir se o status NÃO for 'human'.
+                # Se o status for 'human' e já houver alguém, bloqueia agentes.
+                if current_status == 'human' and current_assigned and not is_admin:
                     return {'ok': False, 'reason': 'already_assigned', 'current_agent': current_assigned}
+                
                 update_data = {
                     'status': 'human',
                     'assigned_agent': current_user.id,
@@ -912,7 +918,7 @@ async def accept_service(client_id: str, current_user: User = Depends(get_curren
                 raise HTTPException(status_code=404, detail='Cliente não encontrado')
             else:
                 current_ag = result.get('current_agent', 'unknown')
-                raise HTTPException(status_code=409, detail=f'Atendimento já atribuído ao agente {current_ag}')
+                raise HTTPException(status_code=409, detail=f'Atendimento já está sendo realizado pelo agente {current_ag}')
         else:
             # broadcast event to connected frontends
             try:
@@ -929,8 +935,8 @@ async def accept_service(client_id: str, current_user: User = Depends(get_curren
     else:
         # fallback sem transação
         latest = await db.clients.find_one({"id": client_id})
-        if latest.get('assigned_agent') and not is_admin:
-            raise HTTPException(status_code=409, detail='Atendimento já atribuído a outro agente')
+        if latest.get('status') == 'human' and latest.get('assigned_agent') and not is_admin:
+            raise HTTPException(status_code=409, detail='Atendimento já está sendo realizado por outro agente')
         update_data = {
             "status": "human",
             "assigned_agent": current_user.id,
