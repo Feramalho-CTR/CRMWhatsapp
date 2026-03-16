@@ -346,7 +346,7 @@ async def add_cors_header_to_errors(request: Request, call_next):
         content = {
             "detail": f"Erro interno do servidor: {str(e)}", 
             "type": "unhandled_exception",
-            "debug_info": error_details if os.environ.get('DEBUG_MODE') == 'true' else None
+            "debug_info": error_details # Sempre incluído durante a fase de debug
         }
         response = JSONResponse(status_code=500, content=content)
         origin = request.headers.get("origin")
