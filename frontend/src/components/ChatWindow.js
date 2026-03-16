@@ -4,6 +4,7 @@ import { Input } from './ui/input';
 import { Badge } from './ui/badge';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from './ui/dropdown-menu';
 import { api } from '../App';
+import ContactCard from './ContactCard';
 import { getAuth, reauthenticateWithCredential, EmailAuthProvider } from 'firebase/auth';
 
 // ─── Modal de Confirmação de Senha ─────────────────────────────────────────
@@ -377,6 +378,11 @@ const ChatWindow = ({ conversation, currentUser, onSendMessage, onStatusUpdate, 
       }
       if (typeof showToast === 'function') showToast('Você assumiu o atendimento', 'success');
     } catch (error) {
+      const wsProtocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
+      const token = localStorage.getItem('token');
+      // Extrai o host corretamente da baseURL do axios ou usa o origin do navegador
+      let wsHost = backendBase.replace(/^https?:\/\//, '');
+      const wsUrl = `${wsProtocol}://${wsHost}/ws?token=${encodeURIComponent(token || '')}`;
       console.error('Erro ao aceitar atendimento:', error);
       const st = error?.response?.status;
       const detail = error?.response?.data?.detail || '';
@@ -646,7 +652,62 @@ const ChatWindow = ({ conversation, currentUser, onSendMessage, onStatusUpdate, 
                 {message.message_type === 'sticker' && message.media_metadata?.url && (
                   <div className="mb-2"><img src={message.media_metadata.url} alt="Sticker" className="w-32 h-32 object-contain" /></div>
                 )}
-                <p className="text-sm leading-relaxed">{message.content}</p>
+                {(() => {
+                  const isContactType = message.message_type === 'contacts';
+                  const looksLikeContact = typeof message.content === 'string' && (
+                    message.content.includes('"contacts":') || 
+                    message.content.includes("'contacts':")
+                  );
+
+                  if (isContactType || looksLikeContact) {
+                    try {
+                      let content = message.content;
+                      if (typeof content === 'string') {
+                        // Limpeza cirúrgica: substitui aspas simples apenas em posições estruturais
+                        // (antes de chaves, depois de dois pontos, ou delimitando valores/chaves)
+                        if (content.includes("'") && !content.includes('"')) {
+                          // Regex para chaves: 'key': -> "key":
+                          content = content.replace(/'(\w+)':/g, '"$1":');
+                          // Regex para valores de string: : 'value' -> : "value"
+                          content = content.replace(/: '([^']*)'/g, ': "$1"');
+                          // Regex para strings em arrays: ['val1', 'val2'] -> ["val1", "val2"]
+                          content = content.replace(/\[\s*'([^']*)'/g, '["$1"');
+                          content = content.replace(/'([^']*)'\s*\]/g, '"$1"]');
+                          content = content.replace(/,\s*'([^']*)'/g, ', "$1"');
+                          content = content.replace(/'([^']*)'\s*,/g, '"$1",');
+                          // Regex para chaves de objetos em arrays ou valores: { 'key' -> { "key"
+                          content = content.replace(/\{\s*'([^']*)'/g, '{"$1"');
+                          // Fallback final: troca o que sobrar de aspas simples por duplas (seletivo)
+                          content = content.replace(/'/g, '"');
+                        }
+                        
+                        const parsed = JSON.parse(content);
+                        const contactList = Array.isArray(parsed) ? parsed : (parsed.contacts || []);
+                        if (Array.isArray(contactList) && contactList.length > 0) {
+                          return (
+                            <div className="space-y-2">
+                              {contactList.map((c, i) => <ContactCard key={i} contact={c} />)}
+                            </div>
+                          );
+                        }
+                      } else if (Array.isArray(content)) {
+                        return content.map((c, i) => <ContactCard key={i} contact={c} />);
+                      }
+                    } catch (e) {
+                      console.warn("Erro ao processar card de contato:", e);
+                      // Fallback visual dentro do balão para não quebrar o chat
+                      return (
+                        <div className="p-2 border border-dashed border-red-200 rounded bg-red-50/50">
+                          <p className="text-[10px] text-red-500 font-bold uppercase">📎 Anexo de Contato</p>
+                          <p className="text-xs text-red-400 mt-1">Não foi possível carregar os detalhes do contato.</p>
+                        </div>
+                      );
+                    }
+                  }
+                  
+                  // Fallback para conteúdo normal ou erro no parse
+                  return <p className="text-sm leading-relaxed whitespace-pre-wrap">{message.content}</p>;
+                })()}
                 <div className={`text-xs mt-1 ${['agent', 'bot'].includes(message.sender_type) ? 'text-white/80' : 'text-gray-500'}`}>
                   {formatTime(message.timestamp)}
                   {message.sender_type === 'bot' && <span className="ml-2 font-bold text-white uppercase" style={{fontSize: '9px'}}>🤖 BOT</span>}

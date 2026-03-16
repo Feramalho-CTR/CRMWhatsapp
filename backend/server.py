@@ -1801,7 +1801,13 @@ async def whatsapp_webhook(request: Request):
                     media_md = {"id": vid.get("id"), "mime_type": vid.get("mime_type")}
                 else:
                     content = content or "Vídeo"
-            elif m_type == "sticker":
+            elif m_type == "contacts" or m.get("type") == "contacts":
+                m_type = "contacts"
+                contacts_data = m.get("contacts", [])
+                # Use json.dumps to ensure valid JSON with double quotes
+                content = json.dumps(contacts_data, ensure_ascii=False)
+            elif m_type == "sticker" or m.get("type") == "sticker":
+                m_type = "sticker"
                 if not media_md:
                     stk = m.get("sticker", {})
                     content = "Sticker"
