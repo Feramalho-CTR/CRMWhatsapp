@@ -422,7 +422,7 @@ class AgentPerformance(BaseModel):
     avg_response_time_minutes: float
     conversations_finished_today: int
     status: str
-    last_activity: datetime
+    last_activity: Optional[datetime] = None
 
 class ServiceMetrics(BaseModel):
     model_config = ConfigDict(extra='ignore')
@@ -872,12 +872,12 @@ async def get_agents_performance(admin_user: User = Depends(admin_required)):
         
         performance = AgentPerformance(
             agent_id=agent_id,
-            agent_name=agent.get("full_name") or agent.get("username"),
+            agent_name=agent.get("full_name") or agent.get("username") or "Agente",
             total_conversations=total_conversations,
             avg_response_time_minutes=round(avg_response_time, 2),
             conversations_finished_today=conversations_today,
             status=agent.get("status", "offline"),
-            last_activity=agent.get("last_activity", agent["created_at"])
+            last_activity=agent.get("last_activity") or agent.get("created_at") or datetime.now(timezone.utc)
         )
         performance_list.append(performance)
     
@@ -896,12 +896,13 @@ async def get_service_metrics(admin_user: User = Depends(admin_required)):
     
     metrics_list = []
     for conv in finished_conversations:
+        agent_id = conv.get("assigned_agent")
         # Pula se não tiver agente atribuído
-        if not conv.get("assigned_agent"):
+        if not agent_id:
             continue
             
         # Obtém o nome do agente
-        agent = await db.users.find_one({"id": conv["assigned_agent"]})
+        agent = await db.users.find_one({"id": agent_id})
         agent_name = "Desconhecido"
         if agent:
             agent_name = agent.get("full_name") or agent.get("username")
@@ -914,14 +915,14 @@ async def get_service_metrics(admin_user: User = Depends(admin_required)):
             duration = (end - start).total_seconds() / 60  # minutes
         
         metric = ServiceMetrics(
-            conversation_id=conv["id"],
-            client_phone=conv["phone_number"],
+            conversation_id=conv.get("id") or "unknown",
+            client_phone=conv.get("phone_number") or conv.get("id") or "unknown",
             client_name=conv.get("name"),
-            agent_id=conv["assigned_agent"],
+            agent_id=agent_id,
             agent_name=agent_name,
             service_duration_minutes=round(duration, 2) if duration else None,
-            started_at=conv["service_started_at"],
-            finished_at=conv["service_finished_at"]
+            started_at=conv.get("service_started_at") or conv.get("created_at") or datetime.now(timezone.utc),
+            finished_at=conv.get("service_finished_at")
         )
         metrics_list.append(metric)
     

@@ -1,0 +1,10 @@
+--- Verificando Coleção: users ---
+User Doc ID: Felipe Ramalho, Username: Felipe Ramalho, Role: admin, CreatedAt: 2026-03-15 21:56:04.090000+00:00
+User Doc ID: Felipe Ramalho Agente, Username: Felipe Ramalho Agente, Role: agent, CreatedAt: 2026-03-15 23:50:27.387708+00:00
+User Doc ID: admin, Username: admin, Role: admin, CreatedAt: 2026-03-15 02:40:09.722861+00:00
+User Doc ID: agent1, Username: agent1, Role: agent, CreatedAt: 2026-03-15 02:40:10.938854+00:00
+User Doc ID: qOp7RV1xOCNDzCGURyfm9EP9SDo2, Username: None, Role: simple, CreatedAt: None
+Total Users: 5
+
+--- Verificando Coleção: clients (finished) ---
+Total Finished Clients: 0
