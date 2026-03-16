@@ -354,6 +354,7 @@ def get_password_hash(password):
 class User(BaseModel):
     model_config = ConfigDict(extra='ignore')
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    uid: Optional[str] = None # Firebase UID
     username: str
     email: str
     full_name: Optional[str] = None
@@ -652,7 +653,8 @@ async def create_user_admin(user_data: UserCreate, admin_user: User = Depends(ad
 
     # 2. Cria no banco de dados local (Firestore) para permissões e metadados
     new_user = User(
-        id=fb_user.uid, # Usa o UID do Firebase como ID local
+        id=user_data.username, # Usa o username como ID do documento para legibilidade
+        uid=fb_user.uid,       # Guarda o UID real do Firebase para login
         username=user_data.username,
         email=user_data.email,
         full_name=user_data.full_name,
@@ -1065,10 +1067,27 @@ async def update_profile(profile_data: UserUpdate, current_user: User = Depends(
             raise HTTPException(status_code=400, detail="Email já cadastrado")
     
     if update_data:
-        await db.users.update_one(
-            {"id": current_user.id},
-            {"$set": update_data}
-        )
+        # Se o username mudou, precisamos trocar o ID do documento (deletar old, criar new)
+        if "username" in update_data and update_data["username"] != current_user.id:
+            new_id = update_data["username"]
+            old_id = current_user.id
+            
+            # Busca dados completos atuais
+            full_data = await db.users.find_one({"id": old_id})
+            full_data.update(update_data)
+            full_data["id"] = new_id
+            
+            # Insere novo e deleta antigo
+            await db.users.insert_one(full_data)
+            await db.users.delete_one({"id": old_id})
+            
+            updated_user = await db.users.find_one({"id": new_id})
+            return User(**updated_user)
+        else:
+            await db.users.update_one(
+                {"id": current_user.id},
+                {"$set": update_data}
+            )
     
     updated_user = await db.users.find_one({"id": current_user.id})
     return User(**updated_user)
@@ -1109,13 +1128,28 @@ async def update_user(user_id: str, user_data: UserUpdate, admin_user: User = De
         if existing and existing.get("id") != user_id:
             raise HTTPException(status_code=400, detail="Email já cadastrado")
     
-    result = await db.users.update_one(
-        {"id": user_id},
-        {"$set": update_data}
-    )
-    
-    if result.get('matched_count') == 0:
-        raise HTTPException(status_code=404, detail="Usuário não encontrado")
+    if update_data:
+        result = await db.users.update_one(
+            {"id": user_id},
+            {"$set": update_data}
+        )
+        
+        if result.get('matched_count') == 0:
+            raise HTTPException(status_code=404, detail="Usuário não encontrado")
+
+    # Se o username mudou no update do admin, também precisamos renomear o documento
+    if "username" in update_data and update_data["username"] != user_id:
+        new_id = update_data["username"]
+        # Busca dados atualizados (que já sofreram o update_one acima, mas no ID antigo)
+        full_data = await db.users.find_one({"id": user_id})
+        full_data["id"] = new_id
+        
+        # Insere novo e deleta antigo
+        await db.users.insert_one(full_data)
+        await db.users.delete_one({"id": user_id})
+        
+        updated_user = await db.users.find_one({"id": new_id})
+        return User(**updated_user)
     
     updated_user = await db.users.find_one({"id": user_id})
     return User(**updated_user)
