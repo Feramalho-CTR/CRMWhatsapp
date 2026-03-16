@@ -284,7 +284,13 @@ class _CollectionWrapper:
                 if self._sort:
                     key, direction = self._sort
                     reverse = True if direction < 0 else False
-                    results.sort(key=lambda x: x.get(key) or 0, reverse=reverse)
+                    # Ordenação segura contra tipos mistos ou None
+                    def safe_sort_key(x):
+                        val = x.get(key)
+                        if val is None:
+                            return 0 if not reverse else float('inf')
+                        return val
+                    results.sort(key=safe_sort_key, reverse=reverse)
                 if self._limit:
                     results = results[:self._limit]
                 if n:
@@ -653,8 +659,18 @@ async def change_password():
 # --- ROTAS ADMINISTRATIVAS ---
 @api_router.get("/admin/users", response_model=List[User])
 async def get_all_users(admin_user: User = Depends(admin_required)):
-    users = await db.users.find().to_list(1000)
-    return [User(**user) for user in users]
+    users_data = await db.users.find().to_list(1000)
+    valid_users = []
+    for u_dict in users_data:
+        try:
+            # Garante que o ID e campos essenciais estejam presentes para o modelo User
+            if not u_dict.get("username") or not u_dict.get("email"):
+                continue
+            valid_users.append(User(**u_dict))
+        except Exception as e:
+            logging.warning(f"Pulando usuário inválido no Firestore: {u_dict.get('id', 'sem_id')} - Erro: {e}")
+            continue
+    return valid_users
 
 
 @api_router.post("/admin/users", response_model=User)
@@ -938,7 +954,8 @@ async def get_service_metrics(admin_user: User = Depends(admin_required)):
         )
         metrics_list.append(metric)
     
-    return sorted(metrics_list, key=lambda x: x.finished_at, reverse=True)
+    # Ordenação segura por finished_at (pode ser None em alguns casos legados)
+    return sorted(metrics_list, key=lambda x: x.finished_at or datetime.min.replace(tzinfo=timezone.utc), reverse=True)
 
 # Rotas de status do agente
 @api_router.put("/agent/status")
