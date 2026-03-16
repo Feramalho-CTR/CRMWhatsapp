@@ -888,28 +888,31 @@ async def get_agents_performance(admin_user: User = Depends(admin_required)):
             if not agent_id:
                 continue
                 
+            # Isolamos as consultas para evitar que falhas em uma zerem os dados das outras
+            total_conversations = 0
             try:
-                # Conta o total de conversas atendidas por este agente
                 total_conversations = await db.clients.count_documents({"assigned_agent": agent_id})
-                
-                # Conta as conversas finalizadas hoje
+            except Exception as e:
+                logging.error(f"Erro ao contar total de conversas do agente {agent_id}: {e}")
+
+            conversations_today = 0
+            try:
                 conversations_today = await db.clients.count_documents({
                     "assigned_agent": agent_id,
                     "status": "finished",
                     "service_finished_at": {"$gte": today_start}
                 })
-                
-                # Calcula o tempo médio de atendimento
+            except Exception as e:
+                logging.error(f"Erro ao contar conversas de hoje do agente {agent_id}: {e}")
+
+            finished_conversations = []
+            try:
                 finished_conversations = await db.clients.find({
                     "assigned_agent": agent_id,
                     "status": "finished"
                 }).to_list(1000)
             except Exception as e:
-                logging.error(f"Erro ao buscar dados do agente {agent_id} no Firestore: {e}")
-                # Fallback em caso de erro de índice ou banco
-                total_conversations = 0
-                conversations_today = 0
-                finished_conversations = []
+                logging.error(f"Erro ao buscar conversas finalizadas do agente {agent_id}: {e}")
             
             total_duration = 0
             count = 0
@@ -968,11 +971,14 @@ async def get_service_metrics(admin_user: User = Depends(admin_required)):
             if not agent_id:
                 continue
                 
-            # Obtém o nome do agente
-            agent = await db.users.find_one({"id": agent_id})
+            # Obtém o nome do agente isoladamente para não quebrar o loop
             agent_name = "Agente Desconhecido"
-            if agent:
-                agent_name = str(agent.get("full_name") or agent.get("username") or "Agente Desconhecido")
+            try:
+                agent = await db.users.find_one({"id": agent_id})
+                if agent:
+                    agent_name = str(agent.get("full_name") or agent.get("username") or "Agente Desconhecido")
+            except Exception as e:
+                logging.error(f"Erro ao buscar nome do agente {agent_id}: {e}")
             
             # Calcula a duração de forma segura
             duration = None
