@@ -8,6 +8,34 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
 import { Badge } from './ui/badge';
 import { api } from '../App';
 
+const ResetPasswordModal = ({ userItem, onConfirm, onCancel, loading }) => {
+  const [newPassword, setNewPassword] = useState('');
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+      <Card className="w-full max-w-md p-6 space-y-4">
+        <h2 className="text-xl font-bold">Resetar Senha</h2>
+        <p className="text-sm text-gray-600">Defina uma nova senha para <strong>{userItem.username}</strong>.</p>
+        <div className="space-y-2">
+          <Label htmlFor="reset_pass">Nova Senha</Label>
+          <Input 
+            id="reset_pass"
+            type="password"
+            placeholder="Mínimo 6 caracteres"
+            value={newPassword}
+            onChange={(e) => setNewPassword(e.target.value)}
+          />
+        </div>
+        <div className="flex justify-end space-x-2 pt-2">
+          <Button variant="outline" onClick={onCancel}>Cancelar</Button>
+          <Button disabled={loading || newPassword.length < 6} onClick={() => onConfirm(newPassword)}>
+            {loading ? 'Salvando...' : 'Confirmar Novo Acesso'}
+          </Button>
+        </div>
+      </Card>
+    </div>
+  );
+};
+
 const AdminPanel = ({ user, onBack }) => {
   const [users, setUsers] = useState([]);
   const [newUser, setNewUser] = useState({
@@ -25,6 +53,7 @@ const AdminPanel = ({ user, onBack }) => {
   
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState({ type: '', content: '' });
+  const [passResetUser, setPassResetUser] = useState(null);
 
   const getRoleBadge = (role) => {
     switch (role) {
@@ -95,7 +124,7 @@ const AdminPanel = ({ user, onBack }) => {
     try {
       const response = await api.get('/admin/service-metrics');
       setServiceMetrics(response.data);
-      // também busca clients para delegação
+      // Busca todos os clientes para permitir reatribuição
       const clientsResp = await api.get('/clients');
       setAllClients(clientsResp.data);
     } catch (error) {
@@ -151,6 +180,20 @@ const AdminPanel = ({ user, onBack }) => {
     }
   };
 
+  const handleResetPassword = async (userId, newPassword) => {
+    setLoading(true);
+    try {
+      await api.post(`/admin/users/${userId}/reset-password`, { password: newPassword });
+      setMessage({ type: 'success', content: 'Senha alterada com sucesso!' });
+      setPassResetUser(null);
+      setTimeout(() => setMessage({ type: '', content: '' }), 3000);
+    } catch (error) {
+      setMessage({ type: 'error', content: error.response?.data?.detail || 'Erro ao resetar senha.' });
+    } finally {
+      setLoading(false);
+    }
+  };
+
   if (user.role !== 'admin') {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
@@ -185,6 +228,15 @@ const AdminPanel = ({ user, onBack }) => {
           }`} data-testid="admin-message">
             {message.content}
           </div>
+        )}
+
+        {passResetUser && (
+          <ResetPasswordModal 
+            userItem={passResetUser}
+            loading={loading}
+            onCancel={() => setPassResetUser(null)}
+            onConfirm={(pass) => handleResetPassword(passResetUser.id, pass)}
+          />
         )}
 
         <Tabs defaultValue="performance" className="space-y-6">
@@ -323,8 +375,11 @@ const AdminPanel = ({ user, onBack }) => {
                     <Label>Cliente</Label>
                     <select className="w-full px-3 py-2 border rounded" value={selectedClient} onChange={(e)=>setSelectedClient(e.target.value)}>
                       <option value="">-- selecione --</option>
-                      {allClients.filter(c=>!c.assigned_agent).map(c=> (
-                        <option key={c.id} value={c.id}>{c.name || c.phone_number} ({c.phone_number})</option>
+                      {allClients.map(c=> (
+                        <option key={c.id} value={c.id}>
+                          {c.assigned_agent ? '[OCUPADO] ' : ''}
+                          {c.name || c.phone_number} ({c.phone_number})
+                        </option>
                       ))}
                     </select>
                   </div>
@@ -332,7 +387,7 @@ const AdminPanel = ({ user, onBack }) => {
                     <Label>Agente</Label>
                     <select className="w-full px-3 py-2 border rounded" value={selectedAgent} onChange={(e)=>setSelectedAgent(e.target.value)}>
                       <option value="">-- selecione --</option>
-                      {users.filter(u=>u.role==='agent').map(a=> (
+                      {users.map(a=> (
                         <option key={a.id} value={a.id}>{a.username} ({getStatusText(a.status)})</option>
                       ))}
                     </select>
@@ -348,7 +403,7 @@ const AdminPanel = ({ user, onBack }) => {
                       } catch(e) {
                         window.alert(e.response?.data?.detail || 'Erro ao delegar cliente');
                       }
-                    }}>Delegar</Button>
+                    }}>Delegar / Reatribuir</Button>
                   </div>
                 </div>
               </Card>
@@ -440,6 +495,14 @@ const AdminPanel = ({ user, onBack }) => {
                       
                       <div className="flex items-center space-x-2">
                         <Button
+                          onClick={() => setPassResetUser(userItem)}
+                          variant="outline"
+                          size="sm"
+                          title="Resetar Senha"
+                        >
+                          🔑
+                        </Button>
+                        <Button
                           onClick={() => handleToggleUserStatus(userItem)}
                           variant={userItem.is_active ? "outline" : "default"}
                           size="sm"
@@ -469,5 +532,6 @@ const AdminPanel = ({ user, onBack }) => {
     </div>
   );
 };
+
 
 export default AdminPanel;

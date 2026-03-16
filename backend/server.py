@@ -594,6 +594,38 @@ async def delete_user(user_id: str, admin_user: User = Depends(admin_required)):
     
     return {"success": True, "message": "Usuário excluído com sucesso"}
 
+@api_router.post("/admin/users/{user_id}/reset-password")
+async def reset_password(user_id: str, password_data: dict, admin_user: User = Depends(admin_required)):
+    """Permite que um admin altere a senha de qualquer usuário."""
+    new_password = password_data.get("password")
+    if not new_password or len(new_password) < 6:
+        raise HTTPException(status_code=400, detail="A nova senha deve ter pelo menos 6 caracteres")
+    
+    # 1. Busca usuário para garantir que existe
+    user = await db.users.find_one({"id": user_id})
+    if not user:
+        raise HTTPException(status_code=404, detail="Usuário não encontrado")
+    
+    # 2. Atualiza no Firebase Auth
+    try:
+        await asyncio.to_thread(
+            auth.update_user,
+            user_id,
+            password=new_password
+        )
+    except Exception as e:
+        logging.error(f"Erro ao resetar senha no Firebase: {str(e)}")
+        raise HTTPException(status_code=400, detail=f"Erro no Firebase: {str(e)}")
+    
+    # 3. Opcional: Atualiza o hash local (se o sistema ainda usar para alguma verificação)
+    hashed_password = get_password_hash(new_password)
+    await db.users.update_one(
+        {"id": user_id},
+        {"$set": {"password": hashed_password}}
+    )
+    
+    return {"success": True, "message": "Senha resetada com sucesso"}
+
 @api_router.get("/admin/whatsapp-config", response_model=WhatsAppConfig)
 async def get_whatsapp_config(admin_user: User = Depends(admin_required)):
     config = await db.whatsapp_config.find_one({})
