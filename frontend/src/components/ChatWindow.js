@@ -5,6 +5,7 @@ import { Badge } from './ui/badge';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from './ui/dropdown-menu';
 import { api } from '../App';
 import ContactCard from './ContactCard';
+import ContactsList from './ContactsList';
 import { getAuth, reauthenticateWithCredential, EmailAuthProvider } from 'firebase/auth';
 
 // ─── Modal de Confirmação de Senha ─────────────────────────────────────────
@@ -377,12 +378,6 @@ const ChatWindow = ({ conversation, currentUser, onSendMessage, onStatusUpdate, 
         console.error('Erro ao buscar mensagens após aceitar:', err);
       }
       if (typeof showToast === 'function') showToast('Você assumiu o atendimento', 'success');
-    } catch (error) {
-      const wsProtocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
-      const token = localStorage.getItem('token');
-      // Extrai o host corretamente da baseURL do axios ou usa o origin do navegador
-      let wsHost = backendBase.replace(/^https?:\/\//, '');
-      const wsUrl = `${wsProtocol}://${wsHost}/ws?token=${encodeURIComponent(token || '')}`;
       console.error('Erro ao aceitar atendimento:', error);
       const st = error?.response?.status;
       const detail = error?.response?.data?.detail || '';
@@ -684,14 +679,10 @@ const ChatWindow = ({ conversation, currentUser, onSendMessage, onStatusUpdate, 
                         const parsed = JSON.parse(content);
                         const contactList = Array.isArray(parsed) ? parsed : (parsed.contacts || []);
                         if (Array.isArray(contactList) && contactList.length > 0) {
-                          return (
-                            <div className="space-y-2">
-                              {contactList.map((c, i) => <ContactCard key={i} contact={c} />)}
-                            </div>
-                          );
+                          return <ContactsList contacts={contactList} />;
                         }
                       } else if (Array.isArray(content)) {
-                        return content.map((c, i) => <ContactCard key={i} contact={c} />);
+                        return <ContactsList contacts={content} />;
                       }
                     } catch (e) {
                       console.warn("Erro ao processar card de contato:", e);

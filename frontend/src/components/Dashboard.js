@@ -75,9 +75,11 @@ const Dashboard = ({ user, onLogout }) => {
       backendBase = backendBase.replace('undefined', '').trim();
       if (!backendBase) backendBase = window.location.origin;
 
-      const wsProtocol = backendBase.startsWith('https') ? 'wss' : 'ws';
+      const wsProtocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
       const token = localStorage.getItem('token');
-      const wsUrl = backendBase.replace(/^https?/, wsProtocol) + `/ws?token=${encodeURIComponent(token || '')}`;
+      // Extrai o host corretamente da baseURL do axios ou usa o origin do navegador
+      let wsHost = backendBase.replace(/^https?:\/\//, '');
+      const wsUrl = `${wsProtocol}://${wsHost}/ws?token=${encodeURIComponent(token || '')}`;
 
       try {
         ws = new WebSocket(wsUrl);
