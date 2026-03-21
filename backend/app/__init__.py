@@ -1,6 +1,6 @@
 # App package
-from .config import firebase_app, firestore_client
-from .db import get_db
+from app.core.firebase import firebase_app, firestore_client
+from app.db.firestore_wrapper import get_db
 
 db = get_db()
 
