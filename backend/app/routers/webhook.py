@@ -26,7 +26,7 @@ def _check_webhook_secret(request: Request):
         raise HTTPException(status_code=401, detail='Webhook secret inválido')
 
 
-@router.get('/api/webhook/status')
+@router.get('/webhook/status')
 async def webhook_check_status(request: Request, phone: str = ''):
     """
     Consulta o status do atendimento de um número de telefone.
@@ -78,7 +78,7 @@ async def webhook_check_status(request: Request, phone: str = ''):
     }
 
 
-@router.post('/api/webhook/bot-response')
+@router.post('/webhook/bot-response')
 async def webhook_bot_response(request: Request):
     """
     Endpoint para o n8n registrar uma resposta do bot SOMENTE se o atendimento
