@@ -1,14 +1,16 @@
 import React, { useState, useEffect } from 'react';
 import { Routes, Route } from 'react-router-dom';
-import ConversationList from './ConversationList';
-import ChatWindow from './ChatWindow';
-import Header from './Header';
-import AdminPanel from './AdminPanel';
-import Settings from './Settings';
-import Profile from './Profile';
+import ConversationList from '../components/ConversationList';
+import ChatWindow from '../components/ChatWindow';
+import Header from '../components/Header';
+import AdminPanel from '../components/AdminPanel';
+import Settings from '../components/Settings';
+import Profile from '../components/Profile';
 import { api } from '../App';
+import { useAuth } from '../contexts/AuthContext';
 
-const Dashboard = ({ user, onLogout }) => {
+const Dashboard = () => {
+  const { user, logout } = useAuth();
   const [conversations, setConversations] = useState([]);
   const [selectedConversation, setSelectedConversation] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -271,7 +273,7 @@ const Dashboard = ({ user, onLogout }) => {
       )}
       <Header 
         user={currentUser} 
-        onLogout={onLogout} 
+        onLogout={logout} 
         onShowAdmin={() => setShowAdminPanel(true)}
         onShowSettings={() => setShowSettings(true)}
         onShowProfile={() => setShowProfile(true)}

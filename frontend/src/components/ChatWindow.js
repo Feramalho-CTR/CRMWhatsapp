@@ -695,6 +695,62 @@ const ChatWindow = ({ conversation, currentUser, onSendMessage, onStatusUpdate, 
                       );
                     }
                   }
+
+                  const isInteractiveType = message.message_type === 'interactive';
+                  const looksLikeInteractive = typeof message.content === 'string' && (
+                    message.content.includes('"type":"button"') || 
+                    message.content.includes('"type": "button"') ||
+                    message.content.includes("'type': 'button'") ||
+                    message.content.includes('"action":') ||
+                    message.content.includes("'action':")
+                  );
+
+                  if (isInteractiveType || looksLikeInteractive) {
+                    try {
+                      let content = message.content;
+                      let parsed = null;
+                      
+                      if (typeof content === 'string') {
+                        // Limpeza rápida para aspas simples caso o n8n envie raw dict string
+                        if (content.includes("'") && !content.includes('"')) {
+                          content = content.replace(/'(\w+)':/g, '"$1":').replace(/: '([^']*)'/g, ': "$1"').replace(/'/g, '"');
+                        }
+                        parsed = JSON.parse(content);
+                      } else if (typeof content === 'object') {
+                        parsed = content;
+                      }
+
+                      if (parsed && parsed.action && parsed.action.buttons) {
+                        return (
+                          <div className="flex flex-col">
+                            {parsed.body && parsed.body.text && (
+                              <p className="text-sm leading-relaxed whitespace-pre-wrap mb-2">
+                                {parsed.body.text}
+                              </p>
+                            )}
+                            {parsed.footer && parsed.footer.text && (
+                              <p className="text-[11px] text-gray-400 mb-2 uppercase tracking-wide">
+                                {parsed.footer.text}
+                              </p>
+                            )}
+                            <div className="flex flex-col gap-1 w-full mt-1 border-t border-white/20 pt-2">
+                              {parsed.action.buttons.map((btn, i) => (
+                                <button
+                                  key={i}
+                                  disabled
+                                  className="w-full text-center py-2 px-3 bg-white/10 hover:bg-white/20 text-white rounded-md text-sm font-semibold transition-colors disabled:opacity-90 disabled:cursor-default"
+                                >
+                                  {btn.reply?.title || "Botão"}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        );
+                      }
+                    } catch (e) {
+                      console.warn("Erro ao processar mensagem interativa:", e);
+                    }
+                  }
                   
                   // Fallback para conteúdo normal ou erro no parse
                   return <p className="text-sm leading-relaxed whitespace-pre-wrap">{message.content}</p>;

@@ -1,5 +1,3 @@
-import asyncio
-import logging
 from datetime import datetime, timezone
 
 from fastapi import FastAPI, Request
@@ -7,12 +5,10 @@ from fastapi.responses import JSONResponse
 from starlette.middleware.cors import CORSMiddleware
 
 from app import db
-from app.core.config import ORIGINS, FIREBASE_PROJECT
-from app.auth.dependencies import get_password_hash
-from app.models.user import User
+from app.core.config import ORIGINS, FIREBASE_PROJECT, USE_N8N, N8N_WEBHOOK_URL
 from app.routers import api_router
-from app.websocket import ws_manager
-from app.websocket.manager import WebSocketManager
+from app.utils.logger import logger
+from app.websockets.manager import websocket_endpoint
 
 # Cria a aplicação FastAPI
 app = FastAPI(
@@ -30,7 +26,6 @@ app.add_middleware(
     allow_headers=["*"],
     expose_headers=["*"]
 )
-
 
 @app.middleware("http")
 async def add_cors_header_to_errors(request: Request, call_next):
@@ -58,54 +53,11 @@ async def add_cors_header_to_errors(request: Request, call_next):
             response.headers["Access-Control-Allow-Credentials"] = "true"
         return response
 
+# Inclui as rotas WebSocket
+app.add_api_websocket_route("/ws", websocket_endpoint)
 
 # Inclui o router principal da API
 app.include_router(api_router)
-
-
-# WebSocket endpoint
-from fastapi import WebSocket, WebSocketDisconnect
-from firebase_admin import auth
-
-
-@app.websocket('/ws')
-async def websocket_endpoint(websocket: WebSocket):
-    token = websocket.query_params.get('token')
-    if not token:
-        await websocket.close(code=4401)
-        return
-
-    try:
-        decoded_token = await asyncio.to_thread(auth.verify_id_token, token)
-        email = decoded_token.get("email")
-        if not email:
-            await websocket.close(code=4401)
-            return
-    except Exception as e:
-        logger.error(f"Erro na validação do token WebSocket: {e}")
-        await websocket.close(code=4401)
-        return
-
-    user = await db.users.find_one({'email': email})
-    if not user:
-        logger.error(f"Usuário WebSocket ({email}) não encontrado no banco local")
-        await websocket.close(code=4401)
-        return
-
-    user_id = user.get('id')
-    await ws_manager.connect(websocket, user_id)
-    try:
-        while True:
-            await websocket.receive_text()
-    except WebSocketDisconnect:
-        ws_manager.disconnect(websocket)
-    except Exception:
-        ws_manager.disconnect(websocket)
-
-
-# Logger centralizado
-from app.utils.logger import logger
-
 
 @app.on_event("startup")
 async def startup_event():
@@ -119,7 +71,6 @@ async def startup_event():
         return
 
     try:
-        # Verifica se usuários existem e atualiza para conter status e full_name
         existing_users = await db.users.find({}).to_list(1000)
         for user in existing_users:
             update_fields = {}
@@ -130,25 +81,13 @@ async def startup_event():
                 update_fields["full_name"] = user.get("username", "")
 
             if update_fields:
-                await db.users.update_one(
-                    {"id": user["id"]},
-                    {"$set": update_fields}
-                )
+                await db.users.update_one({"id": user["id"]}, {"$set": update_fields})
 
-        # Sincroniza configuração n8n a partir das variáveis de ambiente
-        from app.core.config import USE_N8N, N8N_WEBHOOK_URL
         if N8N_WEBHOOK_URL:
             existing_wa_config = await db.whatsapp_config.find_one({})
-            n8n_update = {
-                'use_n8n': USE_N8N,
-                'n8n_webhook_url': N8N_WEBHOOK_URL,
-                'updated_at': datetime.now(timezone.utc)
-            }
+            n8n_update = {'use_n8n': USE_N8N, 'n8n_webhook_url': N8N_WEBHOOK_URL, 'updated_at': datetime.now(timezone.utc)}
             if existing_wa_config:
-                await db.whatsapp_config.update_one(
-                    {'id': existing_wa_config['id']},
-                    {'$set': n8n_update}
-                )
+                await db.whatsapp_config.update_one({'id': existing_wa_config['id']}, {'$set': n8n_update})
                 logger.info(f"n8n config synced from env: use_n8n={USE_N8N}, url={N8N_WEBHOOK_URL}")
             else:
                 from app.models.whatsapp import WhatsAppConfig
@@ -160,7 +99,6 @@ async def startup_event():
 
     except Exception as e:
         logger.error(f"Error creating default users: {e}")
-
 
 @app.on_event("shutdown")
 async def shutdown_db_client():

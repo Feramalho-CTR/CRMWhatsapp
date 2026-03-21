@@ -1,90 +1,21 @@
 // Force trigger Netlify deploy to apply env variables - 2026-03-15
 import React, { useState, useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
-import axios from 'axios';
+import api from './api/apiClient';
 import '@/App.css';
 
 // Componentes
-import LoginPage from './components/LoginPage';
-import Dashboard from './components/Dashboard';
+import LoginPage from './pages/LoginPage';
+import Dashboard from './pages/Dashboard';
 
-const raw_url = process.env.REACT_APP_BACKEND_URL;
-const BACKEND_URL = (raw_url && raw_url !== 'undefined') ? raw_url : '';
-const API = BACKEND_URL ? `${BACKEND_URL}/api` : '/api';
-
-// Cria instância do axios com interceptors
-const api = axios.create({
-  baseURL: API,
-});
-
-// Adiciona token de autenticação às requisições
-api.interceptors.request.use((config) => {
-  const token = localStorage.getItem('token');
-  if (token) {
-    config.headers.Authorization = `Bearer ${token}`;
-  }
-  return config;
-});
-
-// Trata erros de autenticação
-api.interceptors.response.use(
-  (response) => response,
-  (error) => {
-    if (error.response?.status === 401) {
-      localStorage.removeItem('token');
-      localStorage.removeItem('user');
-      // Evita loops infinitos de redirecionamento se já estiver no login
-      if (window.location.pathname !== '/login') {
-        window.location.href = '/login';
-      }
-    }
-    return Promise.reject(error);
-  }
-);
+// A instância do axios foi isolada em src/api/apiClient.js
 
 export { api };
 
-function App() {
-  const [user, setUser] = useState(null);
-  const [loading, setLoading] = useState(true);
+import { AuthProvider, useAuth } from './contexts/AuthContext';
 
-  useEffect(() => {
-    const checkAuth = async () => {
-      const token = localStorage.getItem('token');
-      
-      if (token) {
-        try {
-          // Sempre busca os dados mais recentes do servidor ao carregar a página
-          const response = await api.get('/auth/me');
-          const userData = response.data;
-          setUser(userData);
-          localStorage.setItem('user', JSON.stringify(userData));
-        } catch (error) {
-          console.error('Token validation failed:', error);
-          localStorage.removeItem('token');
-          localStorage.removeItem('user');
-          setUser(null);
-        }
-      } else {
-        setUser(null);
-      }
-      setLoading(false);
-    };
-
-    checkAuth();
-  }, []);
-
-  const login = (token, userData) => {
-    localStorage.setItem('token', token);
-    localStorage.setItem('user', JSON.stringify(userData));
-    setUser(userData);
-  };
-
-  const logout = () => {
-    localStorage.removeItem('token');
-    localStorage.removeItem('user');
-    setUser(null);
-  };
+function AppRoutes() {
+  const { user, loading } = useAuth();
 
   if (loading) {
     return (
@@ -100,33 +31,27 @@ function App() {
         <Routes>
           <Route 
             path="/login" 
-            element={
-              user ? (
-                <Navigate to="/dashboard" replace />
-              ) : (
-                <LoginPage onLogin={login} />
-              )
-            } 
+            element={user ? <Navigate to="/dashboard" replace /> : <LoginPage />} 
           />
           <Route 
             path="/dashboard/*" 
-            element={
-              user ? (
-                <Dashboard user={user} onLogout={logout} />
-              ) : (
-                <Navigate to="/login" replace />
-              )
-            } 
+            element={user ? <Dashboard /> : <Navigate to="/login" replace />} 
           />
           <Route 
             path="/" 
-            element={
-              <Navigate to={user ? "/dashboard" : "/login"} replace />
-            } 
+            element={<Navigate to={user ? "/dashboard" : "/login"} replace />} 
           />
         </Routes>
       </BrowserRouter>
     </div>
+  );
+}
+
+function App() {
+  return (
+    <AuthProvider>
+      <AppRoutes />
+    </AuthProvider>
   );
 }
 

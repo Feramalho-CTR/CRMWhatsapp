@@ -1,13 +1,15 @@
 import React, { useState } from 'react';
-import { Card } from './ui/card';
-import { Button } from './ui/button';
-import { Input } from './ui/input';
-import { Label } from './ui/label';
+import { Card } from '../components/ui/card';
+import { Button } from '../components/ui/button';
+import { Input } from '../components/ui/input';
+import { Label } from '../components/ui/label';
 import { api } from '../App';
-import { auth } from '../firebaseConfig';
+import { auth } from '../config/firebase';
 import { signInWithEmailAndPassword } from 'firebase/auth';
+import { useAuth } from '../contexts/AuthContext';
 
-const LoginPage = ({ onLogin }) => {
+const LoginPage = () => {
+  const { login } = useAuth();
   const [formData, setFormData] = useState({
     username: '', // usado como email
     password: ''
@@ -33,7 +35,7 @@ const LoginPage = ({ onLogin }) => {
       });
       
       const user = response.data;
-      onLogin(idToken, user);
+      login(idToken, user);
     } catch (error) {
       console.error('Login error:', error);
       let errorMessage = 'Erro ao fazer login. Verifique suas credenciais.';
