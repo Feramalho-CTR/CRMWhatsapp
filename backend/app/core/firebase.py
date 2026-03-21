@@ -4,7 +4,7 @@ import os
 import firebase_admin
 from firebase_admin import credentials, firestore
 
-from .settings import FIREBASE_CREDENTIALS_JSON, FIREBASE_PROJECT
+from .config import FIREBASE_CREDENTIALS_JSON, FIREBASE_PROJECT
 
 firebase_app = None
 
