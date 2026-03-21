@@ -95,7 +95,7 @@ async def accept_service(client_id: str, current_user: User = Depends(get_curren
 
         # Broadcast event to connected frontends
         try:
-            from app.websocket import ws_manager
+            from app.websockets.manager import ws_manager
             await ws_manager.broadcast({
                 'type': 'client_assigned',
                 'client_id': client_id,

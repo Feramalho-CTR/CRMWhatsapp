@@ -17,7 +17,7 @@ from app.models.whatsapp import WhatsAppConfig, WhatsAppConfigUpdate
 from app.models.client import Client
 from app.services.whatsapp_service import WhatsAppService
 from app.utils.helpers import normalize_phone, clean_firestore_dict
-from app.websocket import ws_manager
+from app.websockets.manager import ws_manager
 
 router = APIRouter(tags=["whatsapp"])
 db = get_db()

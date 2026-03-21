@@ -7,7 +7,7 @@ from app.core.config import WEBHOOK_SECRET
 from app.db.firestore_wrapper import get_db
 from app.models.message import Message
 from app.utils.helpers import normalize_phone
-from app.websocket import ws_manager
+from app.websockets.manager import ws_manager
 
 router = APIRouter(tags=["webhook"])
 db = get_db()

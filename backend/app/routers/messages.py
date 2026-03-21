@@ -12,7 +12,7 @@ from app.models.user import User, AgentPerformance
 from app.models.message import Message, MessageCreate, Conversation, ServiceMetrics
 from app.models.client import Client
 from app.utils.helpers import clean_firestore_dict
-from app.websocket import ws_manager
+from app.websockets.manager import ws_manager
 
 router = APIRouter(tags=["messages"])
 db = get_db()
