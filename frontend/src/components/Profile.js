@@ -6,7 +6,7 @@ import { Label } from './ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
 import { Badge } from './ui/badge';
 import { api } from '../App';
-import { auth } from '../firebaseConfig';
+import { auth } from '../config/firebase';
 import { updatePassword } from 'firebase/auth';
 
 const Profile = ({ user, onBack, onUserUpdate }) => {
