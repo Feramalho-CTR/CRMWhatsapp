@@ -5,6 +5,13 @@
 
 [build.environment]
   NODE_VERSION = "20"
+  REACT_APP_BACKEND_URL = "https://crmwhatsapp.duckdns.org"
+  REACT_APP_FIREBASE_API_KEY = "AIzaSyAwpBfjx7jMYOk1LGrmgTFPeQmPEltIWJ4"
+  REACT_APP_FIREBASE_AUTH_DOMAIN = "crmwhatsapp-f50bb.firebaseapp.com"
+  REACT_APP_FIREBASE_PROJECT_ID = "crmwhatsapp-f50bb"
+  REACT_APP_FIREBASE_STORAGE_BUCKET = "crmwhatsapp-f50bb.firebasestorage.app"
+  REACT_APP_FIREBASE_MESSAGING_SENDER_ID = "447807832727"
+  REACT_APP_FIREBASE_APP_ID = "1:447807832727:web:4955ffe60b2d4928dddfd2"
 
 [[redirects]]
   from = "/*"

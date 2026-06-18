@@ -1,0 +1,51 @@
+version: '3.8'
+
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: crm-backend
+    restart: always
+    expose:
+      - "8000"
+    env_file:
+      - ./backend/.env
+    # Se o backend precisar persistir arquivos localmente, pode descomentar a linha abaixo
+    # volumes:
+    #   - backend_data:/app/data
+
+  n8n:
+    image: n8nio/n8n:latest
+    container_name: crm-n8n
+    restart: always
+    expose:
+      - "5678"
+    environment:
+      - N8N_HOST=${N8N_DOMAIN:-n8n-crmwhatsapp.duckdns.org}
+      - N8N_PORT=5678
+      - N8N_PROTOCOL=https
+      - WEBHOOK_URL=https://${N8N_DOMAIN:-n8n-crmwhatsapp.duckdns.org}/
+      - GENERIC_TIMEZONE=America/Sao_Paulo
+    volumes:
+      - n8n_data:/home/node/.n8n
+
+  caddy:
+    image: caddy:2-alpine
+    container_name: crm-caddy
+    restart: always
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - backend
+      - n8n
+
+volumes:
+  n8n_data:
+  caddy_data:
+  caddy_config:

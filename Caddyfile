@@ -1,0 +1,7 @@
+crmwhatsapp.duckdns.org {
+    reverse_proxy backend:8000
+}
+
+n8n-crmwhatsapp.duckdns.org {
+    reverse_proxy n8n:5678
+}
