@@ -71,10 +71,15 @@ async def send_whatsapp_message(message_data: MessageCreate, current_user: User 
 async def whatsapp_webhook(request: Request):
     """Webhook para receber mensagens do WhatsApp Cloud API ou payloads mock."""
     raw_body = await request.body()
+    payload = {}
     try:
         payload = await request.json()
     except Exception:
-        payload = {}
+        try:
+            form_data = await request.form()
+            payload = dict(form_data)
+        except Exception:
+            payload = {}
 
     # Verificação de assinatura HMAC-SHA256
     try:
