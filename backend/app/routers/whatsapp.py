@@ -287,8 +287,13 @@ async def whatsapp_webhook(request: Request):
                     msg_dict_save = message.dict()
                     if m.get('id'):
                         msg_dict_save['message_id_external'] = m.get('id')
+                    # Usa timestamp formatado + os primeiros 6 caracteres do ID para evitar colisão, 
+                    # assim as mensagens ficam visivelmente ordenadas por data no Firebase.
+                    time_prefix = message.timestamp.strftime('%Y-%m-%d_%H-%M-%S')
+                    custom_doc_id = f"{time_prefix}_{message.id[:6]}"
+                    
                     await asyncio.to_thread(
-                        lambda md=msg_dict_save, cid=client_id, mid=message.id:
+                        lambda md=msg_dict_save, cid=client_id, mid=custom_doc_id:
                         firestore_client.collection('clients').document(cid).collection('messages').document(mid).set(md)
                     )
                 else:
