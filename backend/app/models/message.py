@@ -21,7 +21,7 @@ class ServiceMetrics(BaseModel):
 
 class Message(BaseModel):
     model_config = ConfigDict(extra='ignore')
-    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    id: str = Field(default_factory=lambda: datetime.now(timezone.utc).strftime('%Y-%m-%d_%H-%M-%S_') + str(uuid.uuid4())[:8])
     client_id: str
     sender_type: str  # "client", "bot", "agent"
     sender_id: Optional[str] = None  # ID do agente se sender_type for "agent"
